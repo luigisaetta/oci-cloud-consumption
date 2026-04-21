@@ -18,6 +18,7 @@ def create_chat_oci_genai(
     auth_type: Optional[str] = None,
     compartment_id: Optional[str] = None,
     max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
 ) -> ChatOCIGenAI:
     """Create and configure a `ChatOCIGenAI` model instance.
 
@@ -32,6 +33,8 @@ def create_chat_oci_genai(
         compartment_id: OCI compartment OCID used by the model service.
             Falls back to `OCI_COMPARTMENT_ID`.
         max_tokens: Max tokens for model output. Falls back to `MAX_TOKENS`.
+        temperature: Sampling temperature for model generation.
+            Falls back to `TEMPERATURE` and defaults to `0.0`.
 
     Returns:
         A configured `ChatOCIGenAI` instance ready for LangChain agent execution.
@@ -53,6 +56,8 @@ def create_chat_oci_genai(
 
     if max_tokens is None:
         max_tokens = int(os.getenv("MAX_TOKENS", "4096"))
+    if temperature is None:
+        temperature = float(os.getenv("TEMPERATURE", "0.0"))
 
     service_endpoint = None
     if resolved_region:
@@ -67,6 +72,7 @@ def create_chat_oci_genai(
         model_kwargs["max_completion_tokens"] = max_tokens
     else:
         model_kwargs["max_tokens"] = max_tokens
+    model_kwargs["temperature"] = temperature
 
     kwargs = {
         "model_id": resolved_model_id,
