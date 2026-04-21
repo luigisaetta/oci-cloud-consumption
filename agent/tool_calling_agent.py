@@ -5,6 +5,8 @@ License: MIT
 Description: LangChain tool-calling agent that consumes tools exposed by configured MCP servers.
 """
 
+import asyncio
+import os
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -27,6 +29,9 @@ SYSTEM_PROMPT = (
     "the required arguments."
 )
 AGENT_RECURSION_LIMIT = 30
+LLM_MAX_RETRIES = int(os.getenv("OCI_LLM_MAX_RETRIES", "3"))
+LLM_RETRY_BASE_SECONDS = float(os.getenv("OCI_LLM_RETRY_BASE_SECONDS", "1.0"))
+LLM_RETRY_MAX_SECONDS = float(os.getenv("OCI_LLM_RETRY_MAX_SECONDS", "8.0"))
 logger = get_console_logger(name="ConsumptionToolCallingAgent")
 
 
@@ -91,10 +96,7 @@ class ConsumptionToolCallingAgent:
         )
 
         messages = self._prepare_messages(user_message=user_message, history=history)
-        result = await agent_graph.ainvoke(
-            {"messages": messages},
-            config={"recursion_limit": AGENT_RECURSION_LIMIT},
-        )
+        result = await self._ainvoke_with_retry(agent_graph, messages)
 
         result_messages = result.get("messages", [])
         self._log_tool_calls(result_messages)
@@ -154,44 +156,69 @@ class ConsumptionToolCallingAgent:
         streamed_parts: List[str] = []
         final_answer = ""
 
-        async for event in agent_graph.astream_events(
-            {"messages": messages},
-            config={"recursion_limit": AGENT_RECURSION_LIMIT},
-            version="v2",
-        ):
-            event_name = event.get("event")
-            event_data = event.get("data", {})
+        attempt = 1
+        while attempt <= LLM_MAX_RETRIES:
+            emitted_any_output = False
+            try:
+                async for event in agent_graph.astream_events(
+                    {"messages": messages},
+                    config={"recursion_limit": AGENT_RECURSION_LIMIT},
+                    version="v2",
+                ):
+                    event_name = event.get("event")
+                    event_data = event.get("data", {})
 
-            if event_name == "on_tool_start":
-                tool_name = event.get("name", "unknown_tool")
-                tool_input = event_data.get("input", {})
-                logger.info(
-                    "Tool call executed | name=%s | args=%s",
-                    tool_name,
-                    tool_input,
-                )
-                yield {
-                    "event": "tool_start",
-                    "data": {"name": tool_name, "args": tool_input},
-                }
-                continue
+                    if event_name == "on_tool_start":
+                        tool_name = event.get("name", "unknown_tool")
+                        tool_input = event_data.get("input", {})
+                        logger.info(
+                            "Tool call executed | name=%s | args=%s",
+                            tool_name,
+                            tool_input,
+                        )
+                        emitted_any_output = True
+                        yield {
+                            "event": "tool_start",
+                            "data": {"name": tool_name, "args": tool_input},
+                        }
+                        continue
 
-            if event_name == "on_tool_end":
-                tool_name = event.get("name", "unknown_tool")
-                yield {"event": "tool_end", "data": {"name": tool_name}}
-                continue
+                    if event_name == "on_tool_end":
+                        tool_name = event.get("name", "unknown_tool")
+                        emitted_any_output = True
+                        yield {"event": "tool_end", "data": {"name": tool_name}}
+                        continue
 
-            if event_name == "on_chat_model_stream":
-                token_text = self._extract_text_from_chunk(event_data.get("chunk"))
-                if token_text:
-                    streamed_parts.append(token_text)
-                    yield {"event": "token", "data": {"text": token_text}}
-                continue
+                    if event_name == "on_chat_model_stream":
+                        token_text = self._extract_text_from_chunk(event_data.get("chunk"))
+                        if token_text:
+                            streamed_parts.append(token_text)
+                            emitted_any_output = True
+                            yield {"event": "token", "data": {"text": token_text}}
+                        continue
 
-            if event_name == "on_chain_end":
-                output = event_data.get("output", {})
-                if isinstance(output, dict) and "messages" in output:
-                    final_answer = self._extract_answer(output.get("messages", []))
+                    if event_name == "on_chain_end":
+                        output = event_data.get("output", {})
+                        if isinstance(output, dict) and "messages" in output:
+                            final_answer = self._extract_answer(output.get("messages", []))
+
+                break
+            except Exception as exc:  # pragma: no cover - runtime integration behavior
+                retryable = self._is_retryable_llm_error(exc)
+                has_attempts_left = attempt < LLM_MAX_RETRIES
+                if retryable and has_attempts_left and not emitted_any_output:
+                    wait_seconds = self._backoff_seconds(attempt)
+                    logger.warning(
+                        "Retryable LLM stream error. attempt=%s/%s wait=%.2fs error=%s",
+                        attempt,
+                        LLM_MAX_RETRIES,
+                        wait_seconds,
+                        exc,
+                    )
+                    await asyncio.sleep(wait_seconds)
+                    attempt += 1
+                    continue
+                raise
 
         answer = final_answer or "".join(streamed_parts).strip()
         yield {
@@ -309,3 +336,102 @@ class ConsumptionToolCallingAgent:
                         parts.append(str(text))
             return "".join(parts)
         return ""
+
+    async def _ainvoke_with_retry(self, agent_graph: Any, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Invoke the agent graph with retries for transient OCI LLM failures.
+
+        Args:
+            agent_graph: LangChain/LangGraph runnable returned by `create_agent`.
+            messages: Prepared message payload.
+
+        Returns:
+            Agent invocation result dictionary.
+
+        Raises:
+            Exception: Re-raises the last non-retryable or exhausted exception.
+        """
+        last_error: Optional[Exception] = None
+        for attempt in range(1, LLM_MAX_RETRIES + 1):
+            try:
+                return await agent_graph.ainvoke(
+                    {"messages": messages},
+                    config={"recursion_limit": AGENT_RECURSION_LIMIT},
+                )
+            except Exception as exc:  # pragma: no cover - runtime integration behavior
+                last_error = exc
+                retryable = self._is_retryable_llm_error(exc)
+                has_attempts_left = attempt < LLM_MAX_RETRIES
+                if retryable and has_attempts_left:
+                    wait_seconds = self._backoff_seconds(attempt)
+                    logger.warning(
+                        "Retryable LLM invoke error. attempt=%s/%s wait=%.2fs error=%s",
+                        attempt,
+                        LLM_MAX_RETRIES,
+                        wait_seconds,
+                        exc,
+                    )
+                    await asyncio.sleep(wait_seconds)
+                    continue
+                raise
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("LLM invocation failed without a captured exception")
+
+    @staticmethod
+    def _backoff_seconds(attempt: int) -> float:
+        """Compute exponential backoff delay for a retry attempt.
+
+        Args:
+            attempt: Retry attempt number starting from 1.
+
+        Returns:
+            Delay in seconds bounded by configured max delay.
+        """
+        delay = LLM_RETRY_BASE_SECONDS * (2 ** max(0, attempt - 1))
+        return min(delay, LLM_RETRY_MAX_SECONDS)
+
+    @staticmethod
+    def _is_retryable_llm_error(exc: Exception) -> bool:
+        """Determine whether an LLM error is transient and retryable.
+
+        Args:
+            exc: Raised exception from model invocation.
+
+        Returns:
+            True for transient network/throttling/service-unavailable errors.
+        """
+        error_name = exc.__class__.__name__.lower()
+        message = str(exc).lower()
+        retryable_markers = (
+            "timeout",
+            "temporarily unavailable",
+            "connection reset",
+            "connection aborted",
+            "connection error",
+            "network",
+            "throttl",
+            "too many requests",
+            "rate limit",
+            "service unavailable",
+            "internal server error",
+            "bad gateway",
+            "gateway timeout",
+            "status 429",
+            "status 500",
+            "status 502",
+            "status 503",
+            "status 504",
+        )
+        retryable_names = (
+            "timeouterror",
+            "connectionerror",
+            "readtimeout",
+            "connecttimeout",
+            "serviceerror",
+        )
+        if any(marker in message for marker in retryable_markers):
+            return True
+        if any(name in error_name for name in retryable_names):
+            return True
+        return False

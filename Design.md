@@ -1,7 +1,7 @@
 # Design.md
 
 ## Document Metadata
-- Version: 1.0
+- Version: 1.1
 - Last modified: 2026-04-21
 - Status: Active (normative)
 
@@ -41,6 +41,29 @@ The platform provides two main operational modes:
 - MCP server authentication and authorization must be enforced using JWT tokens.
 - JWT tokens are issued by OCI IAM.
 - No unauthenticated access to consumption APIs or administrative agent operations is allowed.
+
+## Non-Functional Requirements
+
+### Reliability
+- All OCI API calls must implement retry policies for transient failures.
+- Retries must use exponential backoff.
+- Retryable errors must include network errors and OCI service throttling responses.
+- Operations must be idempotent where retries are applied.
+
+### Observability
+
+#### Logging
+- Structured logging must be used across all components.
+- Logs must include:
+  - timestamp
+  - component (agent, API, MCP)
+  - operation name
+  - success/failure status
+  - error details (if applicable)
+
+#### Tracing
+- Distributed tracing must be supported.
+- Tracing integration with Langfuse on OCI is planned and must be supported by design.
 
 ## Governance Rule for Conflicts
 If a requested change conflicts with this specification:

@@ -88,3 +88,30 @@ def test_log_tool_calls_ignores_messages_without_tool_calls(monkeypatch) -> None
     )
 
     assert captured == []
+
+
+def test_is_retryable_llm_error_true_for_throttling() -> None:
+    err = RuntimeError("OCI GenAI request failed with status 429: Too Many Requests")
+    assert ConsumptionToolCallingAgent._is_retryable_llm_error(err) is True
+
+
+def test_is_retryable_llm_error_true_for_timeout_name() -> None:
+    class FakeTimeoutError(Exception):
+        pass
+
+    err = FakeTimeoutError("Read timed out")
+    assert ConsumptionToolCallingAgent._is_retryable_llm_error(err) is True
+
+
+def test_is_retryable_llm_error_false_for_validation_error() -> None:
+    err = ValueError("Missing required argument 'start_day'")
+    assert ConsumptionToolCallingAgent._is_retryable_llm_error(err) is False
+
+
+def test_backoff_seconds_grows_exponentially_and_caps() -> None:
+    first = ConsumptionToolCallingAgent._backoff_seconds(1)
+    second = ConsumptionToolCallingAgent._backoff_seconds(2)
+    high = ConsumptionToolCallingAgent._backoff_seconds(99)
+
+    assert second >= first
+    assert high <= 8.0
