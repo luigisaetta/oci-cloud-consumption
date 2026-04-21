@@ -1,5 +1,10 @@
 # Design.md
 
+## Document Metadata
+- Version: 1.0
+- Last modified: 2026-04-21
+- Status: Active (normative)
+
 ## Specification Status
 This document defines the initial product and architecture specifications for `oci-cloud-consumption`.
 These specifications are normative and must always be followed during design and implementation, unless explicitly revised in this file.
