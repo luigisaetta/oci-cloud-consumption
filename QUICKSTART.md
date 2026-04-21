@@ -54,7 +54,19 @@ Alternative startup (FastMCP runner):
 python mcp/mcp_consumption.py
 ```
 
-## 5) Available MCP Tools
+## 5) Run the Agent API (FastAPI)
+
+```bash
+uvicorn api.agent_api:app --host 127.0.0.1 --port 8100 --reload
+```
+
+Optional CORS override for Next.js clients:
+
+```bash
+CORS_ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000 uvicorn api.agent_api:app --host 127.0.0.1 --port 8100 --reload
+```
+
+## 6) Available MCP Tools
 
 The server exposes these four public consumption tools:
 - `tool_get_usage_summary_by_service`
@@ -67,3 +79,4 @@ The server exposes these four public consumption tools:
 - OCI authentication follows the backend logic in `utils/oci_utils.py`:
   config profile first, then resource-principal fallback.
 - Date parameters are expected in ISO format (`YYYY-MM-DD`).
+- MCP server list consumed by the agent is defined in `config/mcp_servers.json`.

@@ -50,3 +50,17 @@ All implementation decisions must remain aligned with that specification unless 
 
 ## Quickstart
 - [QUICKSTART.md](./QUICKSTART.md)
+
+## Run Services
+
+Start MCP server (streamable HTTP):
+
+```bash
+uvicorn mcp_consumption:app --app-dir mcp --host 127.0.0.1 --port 8000
+```
+
+Start Agent API (FastAPI):
+
+```bash
+uvicorn api.agent_api:app --host 127.0.0.1 --port 8100 --reload
+```
