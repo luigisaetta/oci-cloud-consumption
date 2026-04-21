@@ -49,6 +49,7 @@ def test_extract_group_value_fallback_direct_attribute() -> None:
 
 def test_make_oci_client_from_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = {}
+    monkeypatch.delenv("OCI_REGION", raising=False)
 
     def fake_from_file(profile_name: str):
         assert profile_name == "DEFAULT"
@@ -69,6 +70,31 @@ def test_make_oci_client_from_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg["region"] == "eu-milan-1"
     assert captured["timeout"] == 60.0
     assert captured["signer"] is None
+
+
+def test_make_oci_client_from_profile_region_overridden_by_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_from_file(profile_name: str):
+        assert profile_name == "DEFAULT"
+        return {"tenancy": "ocid1.tenancy.oc1..aaa", "region": "us-chicago-1"}
+
+    class FakeUsageClient:
+        def __init__(self, cfg, timeout=None, signer=None):
+            captured["cfg"] = cfg
+            captured["timeout"] = timeout
+            captured["signer"] = signer
+
+    monkeypatch.setattr(oci_utils.oci.config, "from_file", fake_from_file)
+    monkeypatch.setattr(oci_utils, "UsageapiClient", FakeUsageClient)
+    monkeypatch.setenv("OCI_REGION", "eu-frankfurt-1")
+
+    _client, cfg = oci_utils.make_oci_client("DEFAULT")
+
+    assert cfg["region"] == "eu-frankfurt-1"
+    assert captured["cfg"]["region"] == "eu-frankfurt-1"
 
 
 def test_make_oci_client_fallback_to_resource_principal(
@@ -103,6 +129,39 @@ def test_make_oci_client_fallback_to_resource_principal(
     assert cfg == {"region": "eu-frankfurt-1", "tenancy": "ocid1.tenancy.oc1..rp"}
     assert captured["timeout"] == 60.0
     assert isinstance(captured["signer"], FakeSigner)
+
+
+def test_make_oci_client_rp_region_overridden_by_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_from_file(profile_name: str):
+        raise RuntimeError("profile not found")
+
+    class FakeSigner:
+        region = "us-ashburn-1"
+        tenancy_id = "ocid1.tenancy.oc1..rp"
+
+    class FakeUsageClient:
+        def __init__(self, cfg, timeout=None, signer=None):
+            captured["cfg"] = cfg
+            captured["timeout"] = timeout
+            captured["signer"] = signer
+
+    monkeypatch.setattr(oci_utils.oci.config, "from_file", fake_from_file)
+    monkeypatch.setattr(oci_utils, "UsageapiClient", FakeUsageClient)
+    monkeypatch.setattr(
+        oci_utils.oci.auth.signers,
+        "get_resource_principals_signer",
+        lambda: FakeSigner(),
+    )
+    monkeypatch.setenv("OCI_REGION", "eu-frankfurt-1")
+
+    _client, cfg = oci_utils.make_oci_client("DEFAULT")
+
+    assert cfg == {"region": "eu-frankfurt-1", "tenancy": "ocid1.tenancy.oc1..rp"}
+    assert captured["cfg"]["region"] == "eu-frankfurt-1"
 
 
 def test_make_identity_client_with_user_config(monkeypatch: pytest.MonkeyPatch) -> None:

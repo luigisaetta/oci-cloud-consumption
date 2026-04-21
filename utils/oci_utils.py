@@ -5,6 +5,7 @@ License: MIT
 Description: Reusable OCI helper functions for auth, identity, and response normalization.
 """
 
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import oci
@@ -41,12 +42,16 @@ def make_oci_client(
         )
         cfg = None
 
+    env_region = (os.getenv("OCI_REGION") or "").strip()
+
     if cfg is not None:
+        if env_region:
+            cfg["region"] = env_region
         return UsageapiClient(cfg, timeout=60.0), cfg
 
     logger.info("Using RESOURCE_PRINCIPAL authentication")
     signer = oci.auth.signers.get_resource_principals_signer()
-    cfg = {"region": signer.region, "tenancy": signer.tenancy_id}
+    cfg = {"region": env_region or signer.region, "tenancy": signer.tenancy_id}
     return UsageapiClient(cfg, signer=signer, timeout=60.0), cfg
 
 

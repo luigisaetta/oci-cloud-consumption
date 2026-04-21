@@ -11,12 +11,17 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastmcp import FastMCP
+from dotenv import load_dotenv
 
 # Ensure project root is available for local imports when this file is executed
 # as a script (e.g. `python mcp/mcp_consumption.py`).
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# Load project environment variables (for example OCI_REGION) when running
+# the MCP server standalone via uvicorn/python.
+load_dotenv(PROJECT_ROOT / ".env")
 
 from utils.consumption_utils import (
     fetch_consumption_by_compartment,
