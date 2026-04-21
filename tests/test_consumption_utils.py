@@ -88,7 +88,7 @@ def test_build_usage_summary_output_aggregates_items() -> None:
     assert services["Object Storage"]["amount"] == 3.0
 
 
-def test_usage_summary_by_service_structured(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_usage_summary_by_service(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_response = SimpleNamespace(
         data=SimpleNamespace(
             items=[
@@ -115,7 +115,7 @@ def test_usage_summary_by_service_structured(monkeypatch: pytest.MonkeyPatch) ->
         ),
     )
 
-    result = consumption_utils.usage_summary_by_service_structured(
+    result = consumption_utils.get_usage_summary_by_service(
         "2026-01-01",
         "2026-01-01",
         query_type="cost",

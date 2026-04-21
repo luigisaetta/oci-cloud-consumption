@@ -419,7 +419,7 @@ def _build_debug_payload(
 # =============================================================================
 
 
-def usage_summary_by_service_structured(
+def get_usage_summary_by_service(
     start_day: date | datetime | str,
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",
@@ -459,7 +459,7 @@ def usage_summary_by_service_structured(
     )
 
 
-def usage_summary_by_compartment_structured(
+def get_usage_summary_by_compartment(
     start_day: date | datetime | str,
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",

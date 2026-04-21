@@ -5,8 +5,8 @@ It is intended for developers integrating these functions from MCP servers, auto
 
 ## Scope
 The module exposes 4 public functions:
-- `usage_summary_by_service_structured`
-- `usage_summary_by_compartment_structured`
+- `get_usage_summary_by_service`
+- `get_usage_summary_by_compartment`
 - `fetch_consumption_by_compartment`
 - `usage_summary_by_service_for_compartment`
 
@@ -16,7 +16,7 @@ Each function is independent at the public API level and relies on private helpe
 
 ---
 
-## 1) `usage_summary_by_service_structured`
+## 1) `get_usage_summary_by_service`
 
 ### What It Does
 Returns a tenant-wide aggregated summary of OCI consumption grouped by **service** for a given date range.
@@ -43,7 +43,7 @@ Returns a tenant-wide aggregated summary of OCI consumption grouped by **service
 
 ---
 
-## 2) `usage_summary_by_compartment_structured`
+## 2) `get_usage_summary_by_compartment`
 
 ### What It Does
 Returns a tenant-wide aggregated summary of OCI consumption grouped by **compartment name** for a given date range.
