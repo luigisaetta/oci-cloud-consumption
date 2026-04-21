@@ -64,3 +64,8 @@ Start Agent API (FastAPI):
 ```bash
 uvicorn api.agent_api:app --host 127.0.0.1 --port 8100 --reload
 ```
+
+## Web Client
+
+First test client (Next.js):
+- [clients/agent-web-test/README.md](./clients/agent-web-test/README.md)
