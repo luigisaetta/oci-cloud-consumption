@@ -42,11 +42,37 @@ app = server.http_app(
 )
 
 
+def _coalesce(value: Any, alias: Any, field_name: str) -> Any:
+    """Return the first non-None value between canonical and alias inputs.
+
+    Args:
+        value: Canonical snake_case value provided by caller.
+        alias: Optional camelCase alias value provided by caller.
+        field_name: Human-readable parameter name used for validation errors.
+
+    Returns:
+        The selected non-None value.
+
+    Raises:
+        ValueError: If both inputs are None.
+    """
+    selected = value if value is not None else alias
+    if selected is None:
+        raise ValueError(
+            f"Missing required argument '{field_name}'. "
+            f"Accepted aliases include snake_case and camelCase forms."
+        )
+    return selected
+
+
 @server.tool
 def tool_get_usage_summary_by_service(
-    start_day: str,
-    end_day_inclusive: str,
-    query_type: str = "COST",
+    start_day: Optional[str] = None,
+    end_day_inclusive: Optional[str] = None,
+    query_type: Optional[str] = "COST",
+    startDay: Optional[str] = None,
+    endDayInclusive: Optional[str] = None,
+    queryType: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return tenant-wide OCI consumption summary grouped by service.
 
@@ -67,18 +93,27 @@ def tool_get_usage_summary_by_service(
         - `totals`: overall amount/quantity totals
         - `metadata`: OCI request metadata (for example region and request id)
     """
+    resolved_start_day = _coalesce(start_day, startDay, "start_day")
+    resolved_end_day = _coalesce(end_day_inclusive, endDayInclusive, "end_day_inclusive")
+    resolved_query_type = query_type if queryType is None else queryType
+    if resolved_query_type is None:
+        resolved_query_type = "COST"
+
     return get_usage_summary_by_service(
-        start_day=start_day,
-        end_day_inclusive=end_day_inclusive,
-        query_type=query_type,
+        start_day=resolved_start_day,
+        end_day_inclusive=resolved_end_day,
+        query_type=resolved_query_type,
     )
 
 
 @server.tool
 def tool_get_usage_summary_by_compartment(
-    start_day: str,
-    end_day_inclusive: str,
-    query_type: str = "COST",
+    start_day: Optional[str] = None,
+    end_day_inclusive: Optional[str] = None,
+    query_type: Optional[str] = "COST",
+    startDay: Optional[str] = None,
+    endDayInclusive: Optional[str] = None,
+    queryType: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return tenant-wide OCI consumption summary grouped by compartment name.
 
@@ -99,23 +134,35 @@ def tool_get_usage_summary_by_compartment(
         - `totals`: overall totals
         - `metadata`: OCI request metadata
     """
+    resolved_start_day = _coalesce(start_day, startDay, "start_day")
+    resolved_end_day = _coalesce(end_day_inclusive, endDayInclusive, "end_day_inclusive")
+    resolved_query_type = query_type if queryType is None else queryType
+    if resolved_query_type is None:
+        resolved_query_type = "COST"
+
     return get_usage_summary_by_compartment(
-        start_day=start_day,
-        end_day_inclusive=end_day_inclusive,
-        query_type=query_type,
+        start_day=resolved_start_day,
+        end_day_inclusive=resolved_end_day,
+        query_type=resolved_query_type,
     )
 
 
 @server.tool
 def tool_fetch_consumption_by_compartment(
-    day_start: str,
-    day_end: str,
-    service: str,
-    query_type: str = "COST",
-    include_subcompartments: bool = True,
-    max_compartment_depth: int = 7,
+    day_start: Optional[str] = None,
+    day_end: Optional[str] = None,
+    service: Optional[str] = None,
+    query_type: Optional[str] = "COST",
+    include_subcompartments: Optional[bool] = True,
+    max_compartment_depth: Optional[int] = 7,
     config_profile: Optional[str] = "DEFAULT",
     debug: bool = False,
+    dayStart: Optional[str] = None,
+    dayEnd: Optional[str] = None,
+    queryType: Optional[str] = None,
+    includeSubcompartments: Optional[bool] = None,
+    maxCompartmentDepth: Optional[int] = None,
+    configProfile: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fetch compartment-level rows filtered by a target service.
 
@@ -141,27 +188,57 @@ def tool_fetch_consumption_by_compartment(
           `resolved_service`, `service_candidates`, `query_used`,
           `filtered_server_side`, `depth`, `time_window`, and `input`.
     """
+    resolved_day_start = _coalesce(day_start, dayStart, "day_start")
+    resolved_day_end = _coalesce(day_end, dayEnd, "day_end")
+    resolved_service = _coalesce(service, None, "service")
+    resolved_query_type = query_type if queryType is None else queryType
+    if resolved_query_type is None:
+        resolved_query_type = "COST"
+    resolved_include_subcompartments = (
+        include_subcompartments
+        if includeSubcompartments is None
+        else includeSubcompartments
+    )
+    if resolved_include_subcompartments is None:
+        resolved_include_subcompartments = True
+    resolved_max_compartment_depth = (
+        max_compartment_depth
+        if maxCompartmentDepth is None
+        else maxCompartmentDepth
+    )
+    if resolved_max_compartment_depth is None:
+        resolved_max_compartment_depth = 7
+    resolved_config_profile = (
+        config_profile if configProfile is None else configProfile
+    )
+
     return fetch_consumption_by_compartment(
-        day_start=day_start,
-        day_end=day_end,
-        service=service,
-        query_type=query_type,
-        include_subcompartments=include_subcompartments,
-        max_compartment_depth=max_compartment_depth,
-        config_profile=config_profile,
+        day_start=resolved_day_start,
+        day_end=resolved_day_end,
+        service=resolved_service,
+        query_type=resolved_query_type,
+        include_subcompartments=resolved_include_subcompartments,
+        max_compartment_depth=resolved_max_compartment_depth,
+        config_profile=resolved_config_profile,
         debug=debug,
     )
 
 
 @server.tool
 def tool_usage_summary_by_service_for_compartment(
-    start_day: str,
-    end_day_inclusive: str,
-    compartment: str,
-    query_type: str = "COST",
-    include_subcompartments: bool = True,
-    max_compartment_depth: int = 7,
+    start_day: Optional[str] = None,
+    end_day_inclusive: Optional[str] = None,
+    compartment: Optional[str] = None,
+    query_type: Optional[str] = "COST",
+    include_subcompartments: Optional[bool] = True,
+    max_compartment_depth: Optional[int] = 7,
     config_profile: Optional[str] = "DEFAULT",
+    startDay: Optional[str] = None,
+    endDayInclusive: Optional[str] = None,
+    queryType: Optional[str] = None,
+    includeSubcompartments: Optional[bool] = None,
+    maxCompartmentDepth: Optional[int] = None,
+    configProfile: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return service breakdown for a specific compartment scope.
 
@@ -186,14 +263,38 @@ def tool_usage_summary_by_service_for_compartment(
         - `totals`: global totals for the selected scope
         - `metadata`: OCI request metadata
     """
+    resolved_start_day = _coalesce(start_day, startDay, "start_day")
+    resolved_end_day = _coalesce(end_day_inclusive, endDayInclusive, "end_day_inclusive")
+    resolved_compartment = _coalesce(compartment, None, "compartment")
+    resolved_query_type = query_type if queryType is None else queryType
+    if resolved_query_type is None:
+        resolved_query_type = "COST"
+    resolved_include_subcompartments = (
+        include_subcompartments
+        if includeSubcompartments is None
+        else includeSubcompartments
+    )
+    if resolved_include_subcompartments is None:
+        resolved_include_subcompartments = True
+    resolved_max_compartment_depth = (
+        max_compartment_depth
+        if maxCompartmentDepth is None
+        else maxCompartmentDepth
+    )
+    if resolved_max_compartment_depth is None:
+        resolved_max_compartment_depth = 7
+    resolved_config_profile = (
+        config_profile if configProfile is None else configProfile
+    )
+
     return usage_summary_by_service_for_compartment(
-        start_day=start_day,
-        end_day_inclusive=end_day_inclusive,
-        compartment=compartment,
-        query_type=query_type,
-        include_subcompartments=include_subcompartments,
-        max_compartment_depth=max_compartment_depth,
-        config_profile=config_profile,
+        start_day=resolved_start_day,
+        end_day_inclusive=resolved_end_day,
+        compartment=resolved_compartment,
+        query_type=resolved_query_type,
+        include_subcompartments=resolved_include_subcompartments,
+        max_compartment_depth=resolved_max_compartment_depth,
+        config_profile=resolved_config_profile,
     )
 
 
