@@ -42,6 +42,9 @@ The platform provides two main operational modes:
 - JWT tokens are issued by OCI IAM.
 - No unauthenticated access to consumption APIs or administrative agent operations is allowed.
 
+## Platform Constraints
+The system must comply with the deployment constraints defined in `OCI-Enterprise-AI-Constraints.md`.
+
 ## Non-Functional Requirements
 
 ### Reliability
