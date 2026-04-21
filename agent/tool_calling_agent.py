@@ -6,6 +6,7 @@ Description: LangChain tool-calling agent that consumes tools exposed by configu
 """
 
 import asyncio
+import json
 import os
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -98,18 +99,32 @@ class ConsumptionToolCallingAgent:
         )
 
         messages = self._prepare_messages(user_message=user_message, history=history)
-        result = await self._ainvoke_with_retry(agent_graph, messages)
+        try:
+            result = await self._ainvoke_with_retry(agent_graph, messages)
+            result_messages = result.get("messages", [])
+            self._log_tool_calls(result_messages)
+            answer = self._extract_answer(result_messages)
+            invoked_tool_calls, used_tools = self._collect_tool_call_stats(result_messages)
+            self._log_agent_event(
+                operation="invoke",
+                status="success",
+                invoked_tool_calls=invoked_tool_calls,
+                used_tools=used_tools,
+            )
 
-        result_messages = result.get("messages", [])
-        self._log_tool_calls(result_messages)
-        answer = self._extract_answer(result_messages)
-
-        return {
-            "answer": answer,
-            "messages": result_messages,
-            "mcp_servers": list(connections.keys()),
-            "tool_count": len(tools),
-        }
+            return {
+                "answer": answer,
+                "messages": result_messages,
+                "mcp_servers": list(connections.keys()),
+                "tool_count": len(tools),
+            }
+        except Exception as exc:  # pragma: no cover - runtime integration behavior
+            self._log_agent_event(
+                operation="invoke",
+                status="failure",
+                error_details=str(exc),
+            )
+            raise
 
     async def invoke_stream(
         self,
@@ -157,80 +172,101 @@ class ConsumptionToolCallingAgent:
 
         streamed_parts: List[str] = []
         final_answer = ""
+        invoked_tool_calls = 0
+        used_tools: set[str] = set()
 
-        attempt = 1
-        while attempt <= LLM_MAX_RETRIES:
-            emitted_any_output = False
-            try:
-                async for event in agent_graph.astream_events(
-                    {"messages": messages},
-                    config={"recursion_limit": AGENT_RECURSION_LIMIT},
-                    version="v2",
-                ):
-                    event_name = event.get("event")
-                    event_data = event.get("data", {})
+        try:
+            attempt = 1
+            while attempt <= LLM_MAX_RETRIES:
+                emitted_any_output = False
+                try:
+                    async for event in agent_graph.astream_events(
+                        {"messages": messages},
+                        config={"recursion_limit": AGENT_RECURSION_LIMIT},
+                        version="v2",
+                    ):
+                        event_name = event.get("event")
+                        event_data = event.get("data", {})
 
-                    if event_name == "on_tool_start":
-                        tool_name = event.get("name", "unknown_tool")
-                        tool_input = event_data.get("input", {})
-                        logger.info(
-                            "Tool call executed | name=%s | args=%s",
-                            tool_name,
-                            tool_input,
-                        )
-                        emitted_any_output = True
-                        yield {
-                            "event": "tool_start",
-                            "data": {"name": tool_name, "args": tool_input},
-                        }
-                        continue
-
-                    if event_name == "on_tool_end":
-                        tool_name = event.get("name", "unknown_tool")
-                        emitted_any_output = True
-                        yield {"event": "tool_end", "data": {"name": tool_name}}
-                        continue
-
-                    if event_name == "on_chat_model_stream":
-                        token_text = self._extract_text_from_chunk(event_data.get("chunk"))
-                        if token_text:
-                            streamed_parts.append(token_text)
+                        if event_name == "on_tool_start":
+                            tool_name = event.get("name", "unknown_tool")
+                            tool_input = event_data.get("input", {})
+                            invoked_tool_calls += 1
+                            used_tools.add(tool_name)
+                            self._log_agent_event(
+                                operation="tool_call",
+                                status="success",
+                                tool_name=tool_name,
+                                tool_args=tool_input,
+                                invoked_tool_calls=invoked_tool_calls,
+                            )
                             emitted_any_output = True
-                            yield {"event": "token", "data": {"text": token_text}}
+                            yield {
+                                "event": "tool_start",
+                                "data": {"name": tool_name, "args": tool_input},
+                            }
+                            continue
+
+                        if event_name == "on_tool_end":
+                            tool_name = event.get("name", "unknown_tool")
+                            emitted_any_output = True
+                            yield {"event": "tool_end", "data": {"name": tool_name}}
+                            continue
+
+                        if event_name == "on_chat_model_stream":
+                            token_text = self._extract_text_from_chunk(event_data.get("chunk"))
+                            if token_text:
+                                streamed_parts.append(token_text)
+                                emitted_any_output = True
+                                yield {"event": "token", "data": {"text": token_text}}
+                            continue
+
+                        if event_name == "on_chain_end":
+                            output = event_data.get("output", {})
+                            if isinstance(output, dict) and "messages" in output:
+                                final_answer = self._extract_answer(output.get("messages", []))
+
+                    break
+                except Exception as exc:  # pragma: no cover - runtime integration behavior
+                    retryable = self._is_retryable_llm_error(exc)
+                    has_attempts_left = attempt < LLM_MAX_RETRIES
+                    if retryable and has_attempts_left and not emitted_any_output:
+                        wait_seconds = self._backoff_seconds(attempt)
+                        logger.warning(
+                            "Retryable LLM stream error. attempt=%s/%s wait=%.2fs error=%s",
+                            attempt,
+                            LLM_MAX_RETRIES,
+                            wait_seconds,
+                            exc,
+                        )
+                        await asyncio.sleep(wait_seconds)
+                        attempt += 1
                         continue
+                    raise
 
-                    if event_name == "on_chain_end":
-                        output = event_data.get("output", {})
-                        if isinstance(output, dict) and "messages" in output:
-                            final_answer = self._extract_answer(output.get("messages", []))
-
-                break
-            except Exception as exc:  # pragma: no cover - runtime integration behavior
-                retryable = self._is_retryable_llm_error(exc)
-                has_attempts_left = attempt < LLM_MAX_RETRIES
-                if retryable and has_attempts_left and not emitted_any_output:
-                    wait_seconds = self._backoff_seconds(attempt)
-                    logger.warning(
-                        "Retryable LLM stream error. attempt=%s/%s wait=%.2fs error=%s",
-                        attempt,
-                        LLM_MAX_RETRIES,
-                        wait_seconds,
-                        exc,
-                    )
-                    await asyncio.sleep(wait_seconds)
-                    attempt += 1
-                    continue
-                raise
-
-        answer = final_answer or "".join(streamed_parts).strip()
-        yield {
-            "event": "final",
-            "data": {
-                "answer": answer,
-                "mcp_servers": list(connections.keys()),
-                "tool_count": len(tools),
-            },
-        }
+            answer = final_answer or "".join(streamed_parts).strip()
+            self._log_agent_event(
+                operation="invoke_stream",
+                status="success",
+                invoked_tool_calls=invoked_tool_calls,
+                used_tools=sorted(used_tools),
+            )
+            yield {
+                "event": "final",
+                "data": {
+                    "answer": answer,
+                    "mcp_servers": list(connections.keys()),
+                    "tool_count": len(tools),
+                },
+            }
+        except Exception as exc:  # pragma: no cover - runtime integration behavior
+            self._log_agent_event(
+                operation="invoke_stream",
+                status="failure",
+                error_details=str(exc),
+                invoked_tool_calls=invoked_tool_calls,
+            )
+            raise
 
     @staticmethod
     def _prepare_messages(
@@ -338,6 +374,53 @@ class ConsumptionToolCallingAgent:
                         parts.append(str(text))
             return "".join(parts)
         return ""
+
+    @staticmethod
+    def _collect_tool_call_stats(messages: List[Any]) -> tuple[int, List[str]]:
+        """Collect aggregate tool-call metrics from the final message trace.
+
+        Args:
+            messages: Message list returned by the LangChain agent run.
+
+        Returns:
+            Tuple `(invoked_tool_calls, used_tools)` where `used_tools` is sorted.
+        """
+        count = 0
+        tools: set[str] = set()
+        for message in messages:
+            tool_calls = getattr(message, "tool_calls", None)
+            if not tool_calls:
+                continue
+            for tool_call in tool_calls:
+                if isinstance(tool_call, dict):
+                    count += 1
+                    tools.add(tool_call.get("name", "unknown_tool"))
+        return count, sorted(tools)
+
+    @staticmethod
+    def _log_agent_event(
+        *,
+        operation: str,
+        status: str,
+        error_details: str = "",
+        **extra: Any,
+    ) -> None:
+        """Emit structured logs for agent observability and reliability auditing.
+
+        Args:
+            operation: Operation name.
+            status: Outcome status (`success` or `failure`).
+            error_details: Error text when status is failure.
+            **extra: Additional structured fields.
+        """
+        payload: Dict[str, Any] = {
+            "component": "agent",
+            "operation": operation,
+            "status": status,
+            "error_details": error_details,
+        }
+        payload.update(extra)
+        logger.info("%s", json.dumps(payload, default=str, sort_keys=True))
 
     async def _ainvoke_with_retry(self, agent_graph: Any, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """Invoke the agent graph with retries for transient OCI LLM failures.
