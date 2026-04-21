@@ -31,16 +31,16 @@ VALID_QUERY_TYPES = ("COST", "USAGE")
 
 
 def _normalize_query_type(query_type: str) -> str:
-    """Return a validated and normalized OCI usage query type.
+    """Validate and normalize OCI usage query type.
 
     Args:
-        query_type: Requested query type, expected to be `"COST"` or `"USAGE"`.
+        query_type: Input query type expected to be `"COST"` or `"USAGE"`.
 
     Returns:
-        Uppercase query type.
+        Normalized uppercase query type.
 
     Raises:
-        ValueError: If the input is not one of the supported values.
+        ValueError: If `query_type` is not one of the supported values.
     """
     qt = (query_type or "").strip().upper()
     if qt not in VALID_QUERY_TYPES:
@@ -49,17 +49,17 @@ def _normalize_query_type(query_type: str) -> str:
 
 
 def _to_date(value: date | datetime | str) -> date:
-    """Convert an input date-like value into a `date` object.
+    """Convert a supported date-like input to `date`.
 
     Args:
-        value: ISO date string (`YYYY-MM-DD`), `date`, or `datetime`.
+        value: Value as ISO date string (`YYYY-MM-DD`), `date`, or `datetime`.
 
     Returns:
-        Normalized `date` value.
+        Normalized `date` instance.
 
     Raises:
-        TypeError: If the type is unsupported.
-        ValueError: If the string is not a valid ISO date.
+        TypeError: If value type is unsupported.
+        ValueError: If string input is not a valid ISO date.
     """
     if isinstance(value, datetime):
         return value.date()
@@ -71,7 +71,14 @@ def _to_date(value: date | datetime | str) -> date:
 
 
 def _to_utc_midnight(value: date | datetime | str) -> str:
-    """Convert a date-like input to RFC3339 UTC midnight (`...T00:00:00Z`)."""
+    """Convert input date to UTC midnight RFC3339 string.
+
+    Args:
+        value: Input date as ISO string, `date`, or `datetime`.
+
+    Returns:
+        Timestamp in format `YYYY-MM-DDT00:00:00Z`.
+    """
     d = _to_date(value)
     dt = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
     return dt.isoformat().replace("+00:00", "Z")
@@ -81,17 +88,17 @@ def _window_start_end_exclusive(
     start_day: date | datetime | str,
     end_day_inclusive: date | datetime | str,
 ) -> Tuple[str, str]:
-    """Build an OCI Usage API time window with exclusive end timestamp.
+    """Build OCI-compatible time window with end-exclusive bound.
 
     Args:
         start_day: Start day (inclusive).
         end_day_inclusive: End day (inclusive).
 
     Returns:
-        Tuple `(start_inclusive, end_exclusive)` in RFC3339 format.
+        Tuple `(start_inclusive, end_exclusive)` in RFC3339 UTC format.
 
     Raises:
-        ValueError: If start day is after end day.
+        ValueError: If `start_day` is after `end_day_inclusive`.
     """
     start_date = _to_date(start_day)
     end_date = _to_date(end_day_inclusive)
@@ -104,12 +111,28 @@ def _window_start_end_exclusive(
 
 
 def _round_or_none(value: Any, ndigits: int = 2) -> Optional[float]:
-    """Round numeric values while preserving `None`."""
+    """Round numeric value while preserving `None`.
+
+    Args:
+        value: Numeric input value or `None`.
+        ndigits: Decimal digits for rounding.
+
+    Returns:
+        Rounded float or `None`.
+    """
     return round(float(value), ndigits) if value is not None else None
 
 
 def _effective_depth(include_sub: bool, max_depth: int) -> int:
-    """Calculate effective compartment depth within OCI-supported limits."""
+    """Compute effective compartment depth within OCI limits.
+
+    Args:
+        include_sub: Whether sub-compartments should be included.
+        max_depth: Requested maximum depth.
+
+    Returns:
+        Effective depth constrained to `[1, MAX_COMPARTMENT_DEPTH]`.
+    """
     if not include_sub:
         return 1
     return max(1, min(int(max_depth), MAX_COMPARTMENT_DEPTH))
@@ -124,7 +147,19 @@ def _build_usage_summary_output(
     response: Any,
     region: Optional[str],
 ) -> Dict[str, Any]:
-    """Aggregate OCI summarized usage response into stable structured output."""
+    """Aggregate summarized usage response into stable output schema.
+
+    Args:
+        start: Start timestamp (inclusive, RFC3339).
+        end_exclusive: End timestamp (exclusive, RFC3339).
+        query_type: Query type used (`COST` or `USAGE`).
+        group_by: Grouping keys requested from OCI.
+        response: OCI SDK response object from summarized usages endpoint.
+        region: OCI region for metadata.
+
+    Returns:
+        Structured dictionary with period, grouped items, totals, and metadata.
+    """
     items_raw = getattr(response.data, "items", []) or []
 
     buckets: Dict[tuple, Dict[str, Any]] = {}
@@ -186,7 +221,20 @@ def _grouped_query(
     query_type: str,
     usage_filter: Optional[Filter],
 ) -> List[Any]:
-    """Execute grouped OCI summarized usage query by compartment and service."""
+    """Run grouped OCI summarized usage query by compartment/service.
+
+    Args:
+        client: OCI usage API client.
+        tenant_id: Tenancy OCID.
+        t_start: Start timestamp (inclusive, RFC3339).
+        t_end_excl: End timestamp (exclusive, RFC3339).
+        depth: Compartment traversal depth.
+        query_type: Query type (`COST` or `USAGE`).
+        usage_filter: Optional OCI filter to apply server-side.
+
+    Returns:
+        List of items from OCI response payload.
+    """
     details = RequestSummarizedUsagesDetails(
         tenant_id=tenant_id,
         granularity=RequestSummarizedUsagesDetails.GRANULARITY_DAILY,
@@ -209,7 +257,18 @@ def _discover_services_union(
     t_end_excl: str,
     depth: int,
 ) -> List[str]:
-    """Discover union of service labels across COST and USAGE queries."""
+    """Discover distinct services across COST and USAGE queries.
+
+    Args:
+        client: OCI usage API client.
+        tenant_id: Tenancy OCID.
+        t_start: Start timestamp (inclusive, RFC3339).
+        t_end_excl: End timestamp (exclusive, RFC3339).
+        depth: Compartment traversal depth.
+
+    Returns:
+        Sorted list of unique service names.
+    """
     services = set()
     for query_type in VALID_QUERY_TYPES:
         items = _grouped_query(
@@ -229,7 +288,15 @@ def _discover_services_union(
 
 
 def _transform_grouped_rows(items: List[Any], query_type: str) -> List[Dict[str, Any]]:
-    """Transform raw OCI grouped rows into stable API output rows."""
+    """Normalize grouped OCI rows for API output.
+
+    Args:
+        items: OCI grouped items.
+        query_type: Query type (`COST` or `USAGE`) to select metric fields.
+
+    Returns:
+        Sorted list of normalized rows.
+    """
     rows: List[Dict[str, Any]] = []
 
     for item in items:
@@ -265,9 +332,18 @@ def _transform_grouped_rows(items: List[Any], query_type: str) -> List[Dict[str,
 
 
 def _filter_rows_by_service(
-    rows: List[Dict[str, Any]], service: str
+    rows: List[Dict[str, Any]],
+    service: str,
 ) -> List[Dict[str, Any]]:
-    """Filter result rows by service name using exact then substring matching."""
+    """Filter rows by service using exact then substring matching.
+
+    Args:
+        rows: Candidate rows.
+        service: Requested service text.
+
+    Returns:
+        Exact case-insensitive matches if present, otherwise substring matches.
+    """
     service_cf = service.casefold()
     exact = [row for row in rows if row.get("service", "").casefold() == service_cf]
     if exact:
@@ -292,7 +368,27 @@ def _build_debug_payload(
     config_profile: Optional[str],
     debug: bool,
 ) -> Dict[str, Any]:
-    """Build final output and optionally enrich it with debug metadata."""
+    """Build result payload and optionally include debug diagnostics.
+
+    Args:
+        rows: Final rows returned to caller.
+        resolved_service: Canonical resolved service label, if any.
+        service_candidates: Candidate services discovered in current window.
+        query_used: Query type actually used to produce rows.
+        filtered_server_side: Whether server-side filtering was used.
+        depth: Effective compartment depth applied.
+        t_start: Start timestamp (inclusive, RFC3339).
+        t_end_excl: End timestamp (exclusive, RFC3339).
+        service_input: Original service input.
+        query_type_requested: Original query type requested by caller.
+        include_subcompartments: Caller preference for sub-compartments.
+        max_compartment_depth: Caller maximum requested depth.
+        config_profile: OCI auth profile used by caller.
+        debug: Flag indicating whether diagnostics should be included.
+
+    Returns:
+        Output dictionary with `rows` and optional diagnostic metadata.
+    """
     result: Dict[str, Any] = {"rows": rows}
     if not debug:
         return result
@@ -328,7 +424,16 @@ def usage_summary_by_service_structured(
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",
 ) -> Dict[str, Any]:
-    """Return tenant-wide OCI usage summary grouped by service."""
+    """Return tenant-wide usage summary grouped by OCI service.
+
+    Args:
+        start_day: Start day (inclusive), ISO string/date/datetime.
+        end_day_inclusive: End day (inclusive), ISO string/date/datetime.
+        query_type: Query type (`COST` or `USAGE`).
+
+    Returns:
+        Structured summary with service-level items, totals, and metadata.
+    """
     qt = _normalize_query_type(query_type)
     start, end_exclusive = _window_start_end_exclusive(start_day, end_day_inclusive)
 
@@ -359,7 +464,16 @@ def usage_summary_by_compartment_structured(
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",
 ) -> Dict[str, Any]:
-    """Return tenant-wide OCI usage summary grouped by compartment name."""
+    """Return tenant-wide usage summary grouped by compartment name.
+
+    Args:
+        start_day: Start day (inclusive), ISO string/date/datetime.
+        end_day_inclusive: End day (inclusive), ISO string/date/datetime.
+        query_type: Query type (`COST` or `USAGE`).
+
+    Returns:
+        Structured summary with compartment-level items, totals, and metadata.
+    """
     qt = _normalize_query_type(query_type)
     start, end_exclusive = _window_start_end_exclusive(start_day, end_day_inclusive)
 
@@ -397,13 +511,24 @@ def fetch_consumption_by_compartment(
     config_profile: Optional[str] = "DEFAULT",
     debug: bool = False,
 ) -> Dict[str, Any]:
-    """Fetch compartment-level usage rows filtered by service.
+    """Fetch compartment-level rows filtered by service.
 
-    Strategy:
-    1. Discover available services in the time window.
-    2. Try server-side filtering when service resolution is unique.
-    3. Fallback to client-side filtering.
-    4. If needed, retry with alternate query type.
+    Args:
+        day_start: Start day (inclusive), ISO string/date/datetime.
+        day_end: End day (inclusive), ISO string/date/datetime.
+        service: Requested service label (exact or partial).
+        query_type: Preferred query type (`COST` or `USAGE`).
+        include_subcompartments: Whether sub-compartments are included.
+        max_compartment_depth: Maximum traversal depth in range 1..7.
+        config_profile: OCI profile name; `None` forces resource-principal auth.
+        debug: When true, include diagnostic metadata in output.
+
+    Returns:
+        Dictionary with `rows`, and optional diagnostic fields when `debug=True`.
+
+    Raises:
+        ValueError: If input parameters are invalid.
+        RuntimeError: If tenancy context cannot be resolved.
     """
     if not service or not service.strip():
         raise ValueError("service must be a non-empty string")
@@ -550,7 +675,24 @@ def usage_summary_by_service_for_compartment(
     max_compartment_depth: int = 7,
     config_profile: Optional[str] = "DEFAULT",
 ) -> Dict[str, Any]:
-    """Return service breakdown for a specific compartment over a time window."""
+    """Return service-level summary for a specific compartment.
+
+    Args:
+        start_day: Start day (inclusive), ISO string/date/datetime.
+        end_day_inclusive: End day (inclusive), ISO string/date/datetime.
+        compartment: Compartment OCID or exact compartment name.
+        query_type: Query type (`COST` or `USAGE`).
+        include_subcompartments: Whether sub-compartments are included.
+        max_compartment_depth: Maximum traversal depth in range 1..7.
+        config_profile: OCI profile name; `None` forces resource-principal auth.
+
+    Returns:
+        Structured summary with service rows, totals, scope, and metadata.
+
+    Raises:
+        ValueError: If inputs are invalid or compartment cannot be resolved.
+        RuntimeError: If tenancy context cannot be resolved.
+    """
     qt = _normalize_query_type(query_type)
     if not 1 <= int(max_compartment_depth) <= MAX_COMPARTMENT_DEPTH:
         raise ValueError(
