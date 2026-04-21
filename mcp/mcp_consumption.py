@@ -8,10 +8,11 @@ Description: FastMCP v2 server exposing OCI consumption analysis tools over stre
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from fastmcp import FastMCP
 from dotenv import load_dotenv
+from pydantic import Field
 
 # Ensure project root is available for local imports when this file is executed
 # as a script (e.g. `python mcp/mcp_consumption.py`).
@@ -199,14 +200,14 @@ def tool_fetch_consumption_by_compartment(
     service: Optional[str] = None,
     query_type: Optional[str] = "COST",
     include_subcompartments: Optional[bool] = True,
-    max_compartment_depth: Optional[int] = 7,
+    max_compartment_depth: Annotated[Optional[int], Field(ge=1, le=7)] = 7,
     config_profile: Optional[str] = "DEFAULT",
     debug: bool = False,
     dayStart: Optional[str] = None,
     dayEnd: Optional[str] = None,
     queryType: Optional[str] = None,
     includeSubcompartments: Optional[bool] = None,
-    maxCompartmentDepth: Optional[int] = None,
+    maxCompartmentDepth: Annotated[Optional[int], Field(ge=1, le=7)] = None,
     configProfile: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fetch compartment-level rows filtered by a target service.
@@ -289,13 +290,13 @@ def tool_usage_summary_by_service_for_compartment(
     compartment: Optional[str] = None,
     query_type: Optional[str] = "COST",
     include_subcompartments: Optional[bool] = True,
-    max_compartment_depth: Optional[int] = 7,
+    max_compartment_depth: Annotated[Optional[int], Field(ge=1, le=7)] = 7,
     config_profile: Optional[str] = "DEFAULT",
     startDay: Optional[str] = None,
     endDayInclusive: Optional[str] = None,
     queryType: Optional[str] = None,
     includeSubcompartments: Optional[bool] = None,
-    maxCompartmentDepth: Optional[int] = None,
+    maxCompartmentDepth: Annotated[Optional[int], Field(ge=1, le=7)] = None,
     configProfile: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return service breakdown for a specific compartment scope.

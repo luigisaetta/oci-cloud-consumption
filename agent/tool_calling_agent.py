@@ -25,6 +25,8 @@ SYSTEM_PROMPT = (
     "Always provide all required date inputs explicitly using ISO format "
     "(YYYY-MM-DD), and include required scope fields such as compartment "
     "or service when applicable. "
+    "When passing max_compartment_depth or maxCompartmentDepth, always use "
+    "an integer between 1 and 7 inclusive. "
     "If a tool returns missing_arguments, call the same tool again with "
     "the required arguments."
 )
