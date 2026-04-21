@@ -60,12 +60,20 @@ def create_chat_oci_genai(
             f"https://inference.generativeai.{resolved_region}.oci.oraclecloud.com"
         )
 
+    model_kwargs = {}
+    # OCI OpenAI-compatible GPT-5 models expect `max_completion_tokens`
+    # instead of legacy `max_tokens`.
+    if resolved_model_id.startswith("openai.gpt-5"):
+        model_kwargs["max_completion_tokens"] = max_tokens
+    else:
+        model_kwargs["max_tokens"] = max_tokens
+
     kwargs = {
         "model_id": resolved_model_id,
         "auth_type": resolved_auth_type,
         "compartment_id": resolved_compartment_id,
         "provider": "openai",
-        "model_kwargs": {"max_tokens": max_tokens},
+        "model_kwargs": model_kwargs,
     }
     if service_endpoint:
         kwargs["service_endpoint"] = service_endpoint
