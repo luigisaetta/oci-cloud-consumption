@@ -58,16 +58,34 @@ def _coalesce(value: Any, alias: Any, field_name: str) -> Any:
     Returns:
         The selected non-None value.
 
-    Raises:
-        ValueError: If both inputs are None.
     """
     selected = value if value is not None else alias
-    if selected is None:
-        raise ValueError(
-            f"Missing required argument '{field_name}'. "
-            f"Accepted aliases include snake_case and camelCase forms."
-        )
+    _ = field_name
     return selected
+
+
+def _missing_arguments_response(
+    tool_name: str,
+    missing_fields: list[str],
+) -> Dict[str, Any]:
+    """Build a structured error payload for missing required tool arguments.
+
+    Args:
+        tool_name: Name of the tool receiving invalid input.
+        missing_fields: Required fields that were not provided.
+
+    Returns:
+        Dictionary describing the validation issue in a model-readable form.
+    """
+    return {
+        "error_type": "missing_arguments",
+        "tool": tool_name,
+        "missing_fields": missing_fields,
+        "message": (
+            "Missing required arguments. "
+            "Accepted aliases include snake_case and camelCase forms."
+        ),
+    }
 
 
 @server.tool
@@ -100,6 +118,17 @@ def tool_get_usage_summary_by_service(
     """
     resolved_start_day = _coalesce(start_day, startDay, "start_day")
     resolved_end_day = _coalesce(end_day_inclusive, endDayInclusive, "end_day_inclusive")
+    missing_fields = []
+    if not resolved_start_day:
+        missing_fields.append("start_day")
+    if not resolved_end_day:
+        missing_fields.append("end_day_inclusive")
+    if missing_fields:
+        return _missing_arguments_response(
+            "tool_get_usage_summary_by_service",
+            missing_fields,
+        )
+
     resolved_query_type = query_type if queryType is None else queryType
     if resolved_query_type is None:
         resolved_query_type = "COST"
@@ -141,6 +170,17 @@ def tool_get_usage_summary_by_compartment(
     """
     resolved_start_day = _coalesce(start_day, startDay, "start_day")
     resolved_end_day = _coalesce(end_day_inclusive, endDayInclusive, "end_day_inclusive")
+    missing_fields = []
+    if not resolved_start_day:
+        missing_fields.append("start_day")
+    if not resolved_end_day:
+        missing_fields.append("end_day_inclusive")
+    if missing_fields:
+        return _missing_arguments_response(
+            "tool_get_usage_summary_by_compartment",
+            missing_fields,
+        )
+
     resolved_query_type = query_type if queryType is None else queryType
     if resolved_query_type is None:
         resolved_query_type = "COST"
@@ -196,6 +236,19 @@ def tool_fetch_consumption_by_compartment(
     resolved_day_start = _coalesce(day_start, dayStart, "day_start")
     resolved_day_end = _coalesce(day_end, dayEnd, "day_end")
     resolved_service = _coalesce(service, None, "service")
+    missing_fields = []
+    if not resolved_day_start:
+        missing_fields.append("day_start")
+    if not resolved_day_end:
+        missing_fields.append("day_end")
+    if not resolved_service:
+        missing_fields.append("service")
+    if missing_fields:
+        return _missing_arguments_response(
+            "tool_fetch_consumption_by_compartment",
+            missing_fields,
+        )
+
     resolved_query_type = query_type if queryType is None else queryType
     if resolved_query_type is None:
         resolved_query_type = "COST"
@@ -271,6 +324,19 @@ def tool_usage_summary_by_service_for_compartment(
     resolved_start_day = _coalesce(start_day, startDay, "start_day")
     resolved_end_day = _coalesce(end_day_inclusive, endDayInclusive, "end_day_inclusive")
     resolved_compartment = _coalesce(compartment, None, "compartment")
+    missing_fields = []
+    if not resolved_start_day:
+        missing_fields.append("start_day")
+    if not resolved_end_day:
+        missing_fields.append("end_day_inclusive")
+    if not resolved_compartment:
+        missing_fields.append("compartment")
+    if missing_fields:
+        return _missing_arguments_response(
+            "tool_usage_summary_by_service_for_compartment",
+            missing_fields,
+        )
+
     resolved_query_type = query_type if queryType is None else queryType
     if resolved_query_type is None:
         resolved_query_type = "COST"

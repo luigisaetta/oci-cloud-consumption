@@ -78,3 +78,11 @@ def test_tool_get_usage_summary_by_service_accepts_camel_case(monkeypatch) -> No
         "end_day_inclusive": "2026-04-21",
         "query_type": "USAGE",
     }
+
+
+def test_tool_get_usage_summary_by_service_missing_args_returns_structured_error() -> None:
+    result = mcp_consumption.tool_get_usage_summary_by_service()
+
+    assert result["error_type"] == "missing_arguments"
+    assert result["tool"] == "tool_get_usage_summary_by_service"
+    assert set(result["missing_fields"]) == {"start_day", "end_day_inclusive"}

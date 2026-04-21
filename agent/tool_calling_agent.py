@@ -18,7 +18,13 @@ from utils.oci_model import create_chat_oci_genai
 SYSTEM_PROMPT = (
     "You are an OCI cloud consumption assistant for tenant administrators. "
     "Use MCP tools whenever data retrieval or analysis is needed. "
-    "Provide concise, accurate, and actionable answers."
+    "Provide concise, accurate, and actionable answers. "
+    "When calling tools, never call with empty arguments. "
+    "Always provide all required date inputs explicitly using ISO format "
+    "(YYYY-MM-DD), and include required scope fields such as compartment "
+    "or service when applicable. "
+    "If a tool returns missing_arguments, call the same tool again with "
+    "the required arguments."
 )
 logger = get_console_logger(name="ConsumptionToolCallingAgent")
 
