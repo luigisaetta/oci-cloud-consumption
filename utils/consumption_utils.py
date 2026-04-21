@@ -2,7 +2,7 @@
 Author: L. Saetta
 Date last modified: 2026-04-21
 License: MIT
-Description: Utility functions to retrieve and aggregate OCI tenant consumption and usage data.
+Description: OCI consumption analysis utilities exposing public functions for agents and MCP servers.
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from oci.usage_api import UsageapiClient
 from oci.usage_api.models import Dimension, Filter, RequestSummarizedUsagesDetails
 
-from utils import get_console_logger
 from utils.oci_utils import (
     extract_group_value,
     get_opc_request_id,
@@ -21,10 +20,14 @@ from utils.oci_utils import (
     resolve_service,
 )
 
-logger = get_console_logger()
-
 MAX_COMPARTMENT_DEPTH = 7
 VALID_QUERY_TYPES = ("COST", "USAGE")
+
+
+# =============================================================================
+# INTERNAL UTILITY FUNCTIONS (PRIVATE)
+# These helpers are implementation details and are intentionally prefixed with _.
+# =============================================================================
 
 
 def _normalize_query_type(query_type: str) -> str:
@@ -68,14 +71,7 @@ def _to_date(value: date | datetime | str) -> date:
 
 
 def _to_utc_midnight(value: date | datetime | str) -> str:
-    """Convert a date-like input to RFC3339 UTC midnight (`...T00:00:00Z`).
-
-    Args:
-        value: ISO date string, `date`, or `datetime`.
-
-    Returns:
-        RFC3339 timestamp in UTC at midnight.
-    """
+    """Convert a date-like input to RFC3339 UTC midnight (`...T00:00:00Z`)."""
     d = _to_date(value)
     dt = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
     return dt.isoformat().replace("+00:00", "Z")
@@ -85,17 +81,14 @@ def _window_start_end_exclusive(
     start_day: date | datetime | str,
     end_day_inclusive: date | datetime | str,
 ) -> Tuple[str, str]:
-    """Build an OCI Usage API time window with an exclusive end bound.
-
-    OCI Usage API expects end timestamps as exclusive bounds. This helper converts
-    an inclusive end day into the next UTC midnight.
+    """Build an OCI Usage API time window with exclusive end timestamp.
 
     Args:
         start_day: Start day (inclusive).
         end_day_inclusive: End day (inclusive).
 
     Returns:
-        Tuple `(start_inclusive, end_exclusive)` as RFC3339 strings.
+        Tuple `(start_inclusive, end_exclusive)` in RFC3339 format.
 
     Raises:
         ValueError: If start day is after end day.
@@ -111,28 +104,12 @@ def _window_start_end_exclusive(
 
 
 def _round_or_none(value: Any, ndigits: int = 2) -> Optional[float]:
-    """Round numeric values while preserving `None`.
-
-    Args:
-        value: Input numeric value.
-        ndigits: Decimal places.
-
-    Returns:
-        Rounded float, or `None` if input is `None`.
-    """
+    """Round numeric values while preserving `None`."""
     return round(float(value), ndigits) if value is not None else None
 
 
 def _effective_depth(include_sub: bool, max_depth: int) -> int:
-    """Calculate effective compartment depth within OCI-supported limits.
-
-    Args:
-        include_sub: Whether to include sub-compartments.
-        max_depth: Requested max depth.
-
-    Returns:
-        Depth value in `[1, MAX_COMPARTMENT_DEPTH]`.
-    """
+    """Calculate effective compartment depth within OCI-supported limits."""
     if not include_sub:
         return 1
     return max(1, min(int(max_depth), MAX_COMPARTMENT_DEPTH))
@@ -147,19 +124,7 @@ def _build_usage_summary_output(
     response: Any,
     region: Optional[str],
 ) -> Dict[str, Any]:
-    """Aggregate OCI summarized usage response into a stable structured output.
-
-    Args:
-        start: Start timestamp (inclusive).
-        end_exclusive: End timestamp (exclusive).
-        query_type: `COST` or `USAGE`.
-        group_by: Grouping keys used by the API request.
-        response: OCI SDK response object.
-        region: OCI region.
-
-    Returns:
-        Structured summary payload with period, items, totals, and metadata.
-    """
+    """Aggregate OCI summarized usage response into stable structured output."""
     items_raw = getattr(response.data, "items", []) or []
 
     buckets: Dict[tuple, Dict[str, Any]] = {}
@@ -173,7 +138,7 @@ def _build_usage_summary_output(
 
         if key_values not in buckets:
             buckets[key_values] = {
-                "group": {k: v for k, v in zip(group_by, key_values)},
+                "group": dict(zip(group_by, key_values)),
                 "amount": 0.0,
                 "quantity": 0.0,
             }
@@ -184,12 +149,12 @@ def _build_usage_summary_output(
         total_qty += quantity
 
     items: List[Dict[str, Any]] = []
-    for agg in buckets.values():
-        row: Dict[str, Any] = {k: v for k, v in agg["group"].items()}
+    for aggregate in buckets.values():
+        row: Dict[str, Any] = dict(aggregate["group"])
         if len(group_by) == 1 and group_by[0] in ("service", "serviceName"):
             row.setdefault("service", row.get(group_by[0]))
-        row["amount"] = _round_or_none(agg["amount"])
-        row["quantity"] = _round_or_none(agg["quantity"])
+        row["amount"] = _round_or_none(aggregate["amount"])
+        row["quantity"] = _round_or_none(aggregate["quantity"])
         items.append(row)
 
     return {
@@ -212,21 +177,158 @@ def _build_usage_summary_output(
     }
 
 
+def _grouped_query(
+    client: UsageapiClient,
+    tenant_id: str,
+    t_start: str,
+    t_end_excl: str,
+    depth: int,
+    query_type: str,
+    usage_filter: Optional[Filter],
+) -> List[Any]:
+    """Execute grouped OCI summarized usage query by compartment and service."""
+    details = RequestSummarizedUsagesDetails(
+        tenant_id=tenant_id,
+        granularity=RequestSummarizedUsagesDetails.GRANULARITY_DAILY,
+        query_type=query_type,
+        is_aggregate_by_time=True,
+        time_usage_started=t_start,
+        time_usage_ended=t_end_excl,
+        filter=usage_filter,
+        group_by=["compartmentPath", "compartmentName", "compartmentId", "service"],
+        compartment_depth=depth,
+    )
+    response = client.request_summarized_usages(details)
+    return getattr(response.data, "items", []) or []
+
+
+def _discover_services_union(
+    client: UsageapiClient,
+    tenant_id: str,
+    t_start: str,
+    t_end_excl: str,
+    depth: int,
+) -> List[str]:
+    """Discover union of service labels across COST and USAGE queries."""
+    services = set()
+    for query_type in VALID_QUERY_TYPES:
+        items = _grouped_query(
+            client,
+            tenant_id,
+            t_start,
+            t_end_excl,
+            depth,
+            query_type,
+            None,
+        )
+        for item in items:
+            service = getattr(item, "service", None)
+            if service:
+                services.add(service)
+    return sorted(services)
+
+
+def _transform_grouped_rows(items: List[Any], query_type: str) -> List[Dict[str, Any]]:
+    """Transform raw OCI grouped rows into stable API output rows."""
+    rows: List[Dict[str, Any]] = []
+
+    for item in items:
+        row: Dict[str, Any] = {
+            "compartment_path": getattr(item, "compartment_path", None),
+            "compartment_name": getattr(item, "compartment_name", None),
+            "service": getattr(item, "service", None),
+        }
+        if query_type == "COST":
+            row.update(
+                {
+                    "computed_amount": round(
+                        float(getattr(item, "computed_amount", 0.0) or 0.0),
+                        2,
+                    ),
+                    "currency": getattr(item, "currency", None),
+                }
+            )
+        else:
+            row.update(
+                {
+                    "computed_quantity": float(
+                        getattr(item, "computed_quantity", 0.0) or 0.0
+                    ),
+                    "unit": getattr(item, "unit", None),
+                }
+            )
+        rows.append(row)
+
+    sort_key = "computed_amount" if query_type == "COST" else "computed_quantity"
+    rows.sort(key=lambda row: row.get(sort_key, 0.0) or 0.0, reverse=True)
+    return rows
+
+
+def _filter_rows_by_service(
+    rows: List[Dict[str, Any]], service: str
+) -> List[Dict[str, Any]]:
+    """Filter result rows by service name using exact then substring matching."""
+    service_cf = service.casefold()
+    exact = [row for row in rows if row.get("service", "").casefold() == service_cf]
+    if exact:
+        return exact
+    return [row for row in rows if service_cf in row.get("service", "").casefold()]
+
+
+def _build_debug_payload(
+    *,
+    rows: List[Dict[str, Any]],
+    resolved_service: Optional[str],
+    service_candidates: List[str],
+    query_used: str,
+    filtered_server_side: bool,
+    depth: int,
+    t_start: str,
+    t_end_excl: str,
+    service_input: str,
+    query_type_requested: str,
+    include_subcompartments: bool,
+    max_compartment_depth: int,
+    config_profile: Optional[str],
+    debug: bool,
+) -> Dict[str, Any]:
+    """Build final output and optionally enrich it with debug metadata."""
+    result: Dict[str, Any] = {"rows": rows}
+    if not debug:
+        return result
+
+    result.update(
+        {
+            "resolved_service": resolved_service,
+            "service_candidates": service_candidates[:50],
+            "query_used": query_used,
+            "filtered_server_side": filtered_server_side,
+            "depth": depth,
+            "time_window": {"start": t_start, "end_exclusive": t_end_excl},
+            "input": {
+                "service": service_input,
+                "query_type_requested": query_type_requested,
+                "include_subcompartments": include_subcompartments,
+                "max_compartment_depth": max_compartment_depth,
+                "config_profile": config_profile,
+            },
+        }
+    )
+    return result
+
+
+# =============================================================================
+# PUBLIC FUNCTIONS
+# These functions are intended to be used by MCP servers and AI agents.
+# =============================================================================
+
+
 def usage_summary_by_service_structured(
     start_day: date | datetime | str,
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",
 ) -> Dict[str, Any]:
-    """Return tenant-wide OCI usage summary grouped by service.
-
-    Args:
-        start_day: Start day (inclusive).
-        end_day_inclusive: End day (inclusive).
-        query_type: `COST` or `USAGE`.
-
-    Returns:
-        Structured summary with one entry per service.
-    """
+    """Return tenant-wide OCI usage summary grouped by service."""
     qt = _normalize_query_type(query_type)
     start, end_exclusive = _window_start_end_exclusive(start_day, end_day_inclusive)
 
@@ -257,16 +359,7 @@ def usage_summary_by_compartment_structured(
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",
 ) -> Dict[str, Any]:
-    """Return tenant-wide OCI usage summary grouped by compartment name.
-
-    Args:
-        start_day: Start day (inclusive).
-        end_day_inclusive: End day (inclusive).
-        query_type: `COST` or `USAGE`.
-
-    Returns:
-        Structured summary with one entry per compartment.
-    """
+    """Return tenant-wide OCI usage summary grouped by compartment name."""
     qt = _normalize_query_type(query_type)
     start, end_exclusive = _window_start_end_exclusive(start_day, end_day_inclusive)
 
@@ -293,199 +386,6 @@ def usage_summary_by_compartment_structured(
     )
 
 
-def _grouped_query(
-    client: UsageapiClient,
-    tenant_id: str,
-    t_start: str,
-    t_end_excl: str,
-    depth: int,
-    query_type: str,
-    usage_filter: Optional[Filter],
-) -> List[Any]:
-    """Execute grouped OCI summarized usage query by compartment and service.
-
-    Args:
-        client: OCI usage API client.
-        tenant_id: Tenancy OCID.
-        t_start: Start timestamp (inclusive).
-        t_end_excl: End timestamp (exclusive).
-        depth: Compartment traversal depth.
-        query_type: `COST` or `USAGE`.
-        usage_filter: Optional OCI filter.
-
-    Returns:
-        List of OCI result items.
-    """
-    details = RequestSummarizedUsagesDetails(
-        tenant_id=tenant_id,
-        granularity=RequestSummarizedUsagesDetails.GRANULARITY_DAILY,
-        query_type=query_type,
-        is_aggregate_by_time=True,
-        time_usage_started=t_start,
-        time_usage_ended=t_end_excl,
-        filter=usage_filter,
-        group_by=["compartmentPath", "compartmentName", "compartmentId", "service"],
-        compartment_depth=depth,
-    )
-    response = client.request_summarized_usages(details)
-    return getattr(response.data, "items", []) or []
-
-
-def _discover_services_union(
-    client: UsageapiClient,
-    tenant_id: str,
-    t_start: str,
-    t_end_excl: str,
-    depth: int,
-) -> List[str]:
-    """Discover union of service labels across COST and USAGE queries.
-
-    Args:
-        client: OCI usage API client.
-        tenant_id: Tenancy OCID.
-        t_start: Start timestamp (inclusive).
-        t_end_excl: End timestamp (exclusive).
-        depth: Compartment traversal depth.
-
-    Returns:
-        Sorted unique service labels.
-    """
-    services = set()
-    for query_type in VALID_QUERY_TYPES:
-        items = _grouped_query(
-            client, tenant_id, t_start, t_end_excl, depth, query_type, None
-        )
-        for item in items:
-            service = getattr(item, "service", None)
-            if service:
-                services.add(service)
-    return sorted(services)
-
-
-def _transform_grouped_rows(items: List[Any], query_type: str) -> List[Dict[str, Any]]:
-    """Transform raw OCI grouped rows into stable API output rows.
-
-    Args:
-        items: Raw OCI grouped query result items.
-        query_type: `COST` or `USAGE`.
-
-    Returns:
-        Sorted list of row dictionaries.
-    """
-    rows: List[Dict[str, Any]] = []
-
-    for item in items:
-        row: Dict[str, Any] = {
-            "compartment_path": getattr(item, "compartment_path", None),
-            "compartment_name": getattr(item, "compartment_name", None),
-            "service": getattr(item, "service", None),
-        }
-        if query_type == "COST":
-            row.update(
-                {
-                    "computed_amount": round(
-                        float(getattr(item, "computed_amount", 0.0) or 0.0), 2
-                    ),
-                    "currency": getattr(item, "currency", None),
-                }
-            )
-        else:
-            row.update(
-                {
-                    "computed_quantity": float(
-                        getattr(item, "computed_quantity", 0.0) or 0.0
-                    ),
-                    "unit": getattr(item, "unit", None),
-                }
-            )
-        rows.append(row)
-
-    sort_key = "computed_amount" if query_type == "COST" else "computed_quantity"
-    rows.sort(key=lambda row: row.get(sort_key, 0.0) or 0.0, reverse=True)
-    return rows
-
-
-def _filter_rows_by_service(
-    rows: List[Dict[str, Any]], service: str
-) -> List[Dict[str, Any]]:
-    """Filter result rows by service name using exact then substring matching.
-
-    Args:
-        rows: Candidate rows.
-        service: Service value to match.
-
-    Returns:
-        Filtered rows.
-    """
-    service_cf = service.casefold()
-    exact = [row for row in rows if row.get("service", "").casefold() == service_cf]
-    if exact:
-        return exact
-    return [row for row in rows if service_cf in row.get("service", "").casefold()]
-
-
-def _build_debug_payload(
-    *,
-    rows: List[Dict[str, Any]],
-    resolved_service: Optional[str],
-    service_candidates: List[str],
-    query_used: str,
-    filtered_server_side: bool,
-    depth: int,
-    t_start: str,
-    t_end_excl: str,
-    service_input: str,
-    query_type_requested: str,
-    include_subcompartments: bool,
-    max_compartment_depth: int,
-    config_profile: Optional[str],
-    debug: bool,
-) -> Dict[str, Any]:
-    """Build final output and optionally enrich it with debug metadata.
-
-    Args:
-        rows: Result rows.
-        resolved_service: Resolved canonical service name, if any.
-        service_candidates: Discovered candidate services.
-        query_used: Query type used to fetch rows.
-        filtered_server_side: Whether filtering happened server side.
-        depth: Effective compartment depth.
-        t_start: Start timestamp (inclusive).
-        t_end_excl: End timestamp (exclusive).
-        service_input: Original requested service value.
-        query_type_requested: Original requested query type.
-        include_subcompartments: Caller preference.
-        max_compartment_depth: Caller max depth input.
-        config_profile: OCI config profile used by caller.
-        debug: If true include debug details.
-
-    Returns:
-        Output payload.
-    """
-    result: Dict[str, Any] = {"rows": rows}
-    if not debug:
-        return result
-
-    result.update(
-        {
-            "resolved_service": resolved_service,
-            "service_candidates": service_candidates[:50],
-            "query_used": query_used,
-            "filtered_server_side": filtered_server_side,
-            "depth": depth,
-            "time_window": {"start": t_start, "end_exclusive": t_end_excl},
-            "input": {
-                "service": service_input,
-                "query_type_requested": query_type_requested,
-                "include_subcompartments": include_subcompartments,
-                "max_compartment_depth": max_compartment_depth,
-                "config_profile": config_profile,
-            },
-        }
-    )
-    return result
-
-
 def fetch_consumption_by_compartment(
     day_start: date | datetime | str,
     day_end: date | datetime | str,
@@ -499,26 +399,11 @@ def fetch_consumption_by_compartment(
 ) -> Dict[str, Any]:
     """Fetch compartment-level usage rows filtered by service.
 
-    The function first tries server-side filtering when a unique service label can
-    be resolved from discovered OCI services. If needed, it falls back to client-side
-    filtering and can also retry with the alternate query type (`COST`/`USAGE`).
-
-    Args:
-        day_start: Start day (inclusive).
-        day_end: End day (inclusive).
-        service: Service label (exact or partial).
-        query_type: Preferred query type, `COST` or `USAGE`.
-        include_subcompartments: Whether sub-compartments should be included.
-        max_compartment_depth: Max traversal depth from 1 to 7.
-        config_profile: OCI profile name or `None` to force resource principals.
-        debug: If true returns additional diagnostic metadata.
-
-    Returns:
-        Dictionary with `rows` and optional debug fields.
-
-    Raises:
-        ValueError: On invalid input values.
-        RuntimeError: When tenancy context cannot be resolved.
+    Strategy:
+    1. Discover available services in the time window.
+    2. Try server-side filtering when service resolution is unique.
+    3. Fallback to client-side filtering.
+    4. If needed, retry with alternate query type.
     """
     if not service or not service.strip():
         raise ValueError("service must be a non-empty string")
@@ -546,16 +431,18 @@ def fetch_consumption_by_compartment(
             operator="AND",
             dimensions=[Dimension(key="service", value=resolved_service)],
         )
-        items = _grouped_query(
-            client,
-            tenant_id,
-            t_start,
-            t_end_excl,
-            depth,
+        rows = _transform_grouped_rows(
+            _grouped_query(
+                client,
+                tenant_id,
+                t_start,
+                t_end_excl,
+                depth,
+                qt,
+                usage_filter,
+            ),
             qt,
-            usage_filter,
         )
-        rows = _transform_grouped_rows(items, qt)
         if rows:
             return _build_debug_payload(
                 rows=rows,
@@ -575,16 +462,18 @@ def fetch_consumption_by_compartment(
             )
 
         alt = "USAGE" if qt == "COST" else "COST"
-        items_alt = _grouped_query(
-            client,
-            tenant_id,
-            t_start,
-            t_end_excl,
-            depth,
+        rows_alt = _transform_grouped_rows(
+            _grouped_query(
+                client,
+                tenant_id,
+                t_start,
+                t_end_excl,
+                depth,
+                alt,
+                usage_filter,
+            ),
             alt,
-            usage_filter,
         )
-        rows_alt = _transform_grouped_rows(items_alt, alt)
         if rows_alt:
             return _build_debug_payload(
                 rows=rows_alt,
@@ -603,8 +492,10 @@ def fetch_consumption_by_compartment(
                 debug=debug,
             )
 
-    items_all = _grouped_query(client, tenant_id, t_start, t_end_excl, depth, qt, None)
-    rows_all = _transform_grouped_rows(items_all, qt)
+    rows_all = _transform_grouped_rows(
+        _grouped_query(client, tenant_id, t_start, t_end_excl, depth, qt, None),
+        qt,
+    )
     subset = _filter_rows_by_service(rows_all, effective_service_filter)
     if subset:
         return _build_debug_payload(
@@ -625,16 +516,10 @@ def fetch_consumption_by_compartment(
         )
 
     alt = "USAGE" if qt == "COST" else "COST"
-    items_all_alt = _grouped_query(
-        client,
-        tenant_id,
-        t_start,
-        t_end_excl,
-        depth,
+    rows_all_alt = _transform_grouped_rows(
+        _grouped_query(client, tenant_id, t_start, t_end_excl, depth, alt, None),
         alt,
-        None,
     )
-    rows_all_alt = _transform_grouped_rows(items_all_alt, alt)
     subset_alt = _filter_rows_by_service(rows_all_alt, effective_service_filter)
 
     return _build_debug_payload(
@@ -665,24 +550,7 @@ def usage_summary_by_service_for_compartment(
     max_compartment_depth: int = 7,
     config_profile: Optional[str] = "DEFAULT",
 ) -> Dict[str, Any]:
-    """Return service breakdown for a specific compartment over a time window.
-
-    Args:
-        start_day: Start day (inclusive).
-        end_day_inclusive: End day (inclusive).
-        compartment: Compartment OCID or exact compartment name.
-        query_type: `COST` or `USAGE`.
-        include_subcompartments: Whether sub-compartments are included.
-        max_compartment_depth: Max depth in range 1..7.
-        config_profile: OCI profile name or `None` for resource principals.
-
-    Returns:
-        Structured service summary scoped to the resolved compartment.
-
-    Raises:
-        ValueError: On invalid inputs or unresolved compartment.
-        RuntimeError: When tenancy context cannot be resolved.
-    """
+    """Return service breakdown for a specific compartment over a time window."""
     qt = _normalize_query_type(query_type)
     if not 1 <= int(max_compartment_depth) <= MAX_COMPARTMENT_DEPTH:
         raise ValueError(
@@ -728,29 +596,30 @@ def usage_summary_by_service_for_compartment(
     unit_seen = None
 
     for item in items:
-        service = extract_group_value(item, "service") or "UNKNOWN"
+        service_name = extract_group_value(item, "service") or "UNKNOWN"
         buckets.setdefault(
-            service, {"service": service, "amount": 0.0, "quantity": 0.0}
+            service_name,
+            {"service": service_name, "amount": 0.0, "quantity": 0.0},
         )
 
         if qt == "COST":
             value = float(getattr(item, "computed_amount", 0.0) or 0.0)
-            buckets[service]["amount"] += value
+            buckets[service_name]["amount"] += value
             total_amount += value
             currency_seen = currency_seen or getattr(item, "currency", None)
         else:
             value = float(getattr(item, "computed_quantity", 0.0) or 0.0)
-            buckets[service]["quantity"] += value
+            buckets[service_name]["quantity"] += value
             total_qty += value
             unit_seen = unit_seen or getattr(item, "unit", None)
 
     rows: List[Dict[str, Any]] = []
     denominator = total_amount if qt == "COST" else total_qty
-    for service, aggregate in buckets.items():
+    for service_name, aggregate in buckets.items():
         base = aggregate["amount"] if qt == "COST" else aggregate["quantity"]
         rows.append(
             {
-                "service": service,
+                "service": service_name,
                 "amount": _round_or_none(aggregate["amount"]) if qt == "COST" else None,
                 "quantity": (
                     _round_or_none(aggregate["quantity"]) if qt == "USAGE" else None
