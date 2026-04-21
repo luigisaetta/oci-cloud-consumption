@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -13,6 +13,7 @@ export default function HomePage() {
   const [conversation, setConversation] = useState([]);
   const [streamingAnswer, setStreamingAnswer] = useState("");
   const [meta, setMeta] = useState(null);
+  const messageListRef = useRef(null);
 
   const streamInvokeUrl = useMemo(() => `${DEFAULT_API_URL}/agent/invoke/stream`, []);
 
@@ -42,6 +43,13 @@ export default function HomePage() {
 
     return { eventName, data };
   }
+
+  useEffect(() => {
+    if (!messageListRef.current) {
+      return;
+    }
+    messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+  }, [conversation, streamingAnswer, loading]);
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -142,87 +150,108 @@ export default function HomePage() {
     setError("");
   }
 
-  return (
-    <main className="page">
-      <section className="card">
-        <h1>OCI Consumption Agent - Web Test Client</h1>
-        <p className="subtitle">Use this page to call the FastAPI agent endpoint and validate tool-calling behavior.</p>
+  function onComposerKeyDown(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (!loading && message.trim()) {
+        event.currentTarget.form?.requestSubmit();
+      }
+    }
+  }
 
-        <div className="metaRow">
-          <span className="label">Agent Stream API:</span>
-          <code>{streamInvokeUrl}</code>
+  return (
+    <main className="chatLayout">
+      <aside className="sidebar">
+        <h1>OCI Consumption Chat</h1>
+        <p className="sidebarSubtitle">
+          Tool-calling assistant for OCI consumption analysis.
+        </p>
+
+        <div className="metaCard">
+          <h2>Connection</h2>
+          <p className="label">Stream Endpoint</p>
+          <code className="endpoint">{streamInvokeUrl}</code>
         </div>
 
-        <form onSubmit={onSubmit} className="form">
-          <label htmlFor="message">Prompt</label>
-          <textarea
-            id="message"
-            rows={6}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Ask something about OCI consumption..."
-            required
-          />
+        <div className="metaCard">
+          <h2>Metadata</h2>
+          <p>
+            <strong>Servers:</strong> {meta?.mcp_servers?.join(", ") || "-"}
+          </p>
+          <p>
+            <strong>Tools loaded:</strong> {meta?.tool_count ?? "-"}
+          </p>
+          <p>
+            <strong>Messages:</strong> {conversation.length}
+          </p>
+        </div>
 
-          <div className="buttonRow">
-            <button type="submit" disabled={loading || !message.trim()}>
-              {loading ? "Invoking agent..." : "Invoke Agent"}
-            </button>
-            <button
-              type="button"
-              className="secondaryButton"
-              onClick={onClearConversation}
-              disabled={loading || conversation.length === 0}
+        <div className="sidebarActions">
+          <button
+            type="button"
+            className="secondaryButton"
+            onClick={onClearConversation}
+            disabled={loading || conversation.length === 0}
+          >
+            Clear Conversation
+          </button>
+        </div>
+      </aside>
+
+      <section className="chatPanel">
+        <div className="messageList" ref={messageListRef}>
+          {conversation.length === 0 ? (
+            <div className="emptyState">
+              Start a conversation by asking about OCI consumption.
+            </div>
+          ) : null}
+
+          {conversation.map((item, index) => (
+            <div
+              key={`${item.role}-${index}`}
+              className={`messageRow ${item.role === "user" ? "userRow" : "assistantRow"}`}
             >
-              Clear Conversation
-            </button>
-          </div>
-        </form>
+              <div className={`bubble ${item.role === "user" ? "userBubble" : "assistantBubble"}`}>
+                <div className="messageRole">{item.role}</div>
+                {item.role === "assistant" ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {item.content}
+                  </ReactMarkdown>
+                ) : (
+                  <p>{item.content}</p>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {loading ? (
+            <div className="messageRow assistantRow">
+              <div className="bubble assistantBubble">
+                <div className="messageRole">assistant</div>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {streamingAnswer || "Thinking..."}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         {error ? <div className="error">{error}</div> : null}
 
-        {meta ? (
-          <div className="metaBlock">
-            <h2>Execution Metadata</h2>
-            <p>
-              <strong>Servers:</strong> {meta.mcp_servers.join(", ") || "-"}
-            </p>
-            <p>
-              <strong>Tools loaded:</strong> {meta.tool_count}
-            </p>
-          </div>
-        ) : null}
-
-        {conversation.length > 0 ? (
-          <div className="answerBlock">
-            <h2>Conversation</h2>
-            <div className="conversation">
-              {conversation.map((item, index) => (
-                <div
-                  key={`${item.role}-${index}`}
-                  className={`message message-${item.role}`}
-                >
-                  <div className="messageRole">{item.role}</div>
-                  <div className="markdownBody">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {item.content}
-                    </ReactMarkdown>
-                  </div>
-                </div>
-              ))}
-              {loading ? (
-                <div className="message message-assistant">
-                  <div className="messageRole">assistant</div>
-                  <div className="markdownBody">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {streamingAnswer || "Thinking..."}
-                    </ReactMarkdown>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
+        <form onSubmit={onSubmit} className="composer">
+          <textarea
+            id="message"
+            rows={3}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={onComposerKeyDown}
+            placeholder="Ask something about OCI consumption..."
+            required
+          />
+          <button type="submit" disabled={loading || !message.trim()}>
+            {loading ? "Invoking..." : "Send"}
+          </button>
+        </form>
       </section>
     </main>
   );
