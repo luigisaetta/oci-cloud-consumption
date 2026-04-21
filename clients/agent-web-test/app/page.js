@@ -10,7 +10,7 @@ export default function HomePage() {
   const [message, setMessage] = useState("Show me OCI consumption by service for the last 7 days.");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [conversation, setConversation] = useState([]);
   const [meta, setMeta] = useState(null);
 
   const invokeUrl = useMemo(() => `${DEFAULT_API_URL}/agent/invoke`, []);
@@ -19,16 +19,24 @@ export default function HomePage() {
     event.preventDefault();
     setLoading(true);
     setError("");
-    setAnswer("");
     setMeta(null);
 
     try {
+      const trimmedMessage = message.trim();
+      const history = conversation.map((item) => ({
+        role: item.role,
+        content: item.content,
+      }));
+
       const response = await fetch(invokeUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message: trimmedMessage,
+          history,
+        }),
       });
 
       const data = await response.json();
@@ -36,11 +44,16 @@ export default function HomePage() {
         throw new Error(data?.detail || `Request failed with status ${response.status}`);
       }
 
-      setAnswer(data.answer || "");
+      setConversation((previous) => [
+        ...previous,
+        { role: "user", content: trimmedMessage },
+        { role: "assistant", content: data.answer || "" },
+      ]);
       setMeta({
         mcp_servers: data.mcp_servers || [],
         tool_count: data.tool_count ?? 0,
       });
+      setMessage("");
     } catch (err) {
       setError(err.message || "Unexpected error while calling agent API.");
     } finally {
@@ -89,11 +102,23 @@ export default function HomePage() {
           </div>
         ) : null}
 
-        {answer ? (
+        {conversation.length > 0 ? (
           <div className="answerBlock">
-            <h2>Assistant Answer</h2>
-            <div className="markdownBody">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+            <h2>Conversation</h2>
+            <div className="conversation">
+              {conversation.map((item, index) => (
+                <div
+                  key={`${item.role}-${index}`}
+                  className={`message message-${item.role}`}
+                >
+                  <div className="messageRole">{item.role}</div>
+                  <div className="markdownBody">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {item.content}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ) : null}
