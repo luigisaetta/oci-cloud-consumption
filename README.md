@@ -47,3 +47,6 @@ Project behavior and constraints are defined by the official specification:
 - [Design.md](./Design.md)
 
 All implementation decisions must remain aligned with that specification unless it is explicitly updated.
+
+## Quickstart
+- [QUICKSTART.md](./QUICKSTART.md)
