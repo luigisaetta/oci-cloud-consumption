@@ -11,27 +11,63 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [conversation, setConversation] = useState([]);
+  const [streamingAnswer, setStreamingAnswer] = useState("");
   const [meta, setMeta] = useState(null);
 
-  const invokeUrl = useMemo(() => `${DEFAULT_API_URL}/agent/invoke`, []);
+  const streamInvokeUrl = useMemo(() => `${DEFAULT_API_URL}/agent/invoke/stream`, []);
+
+  function processSseFrame(frame) {
+    const lines = frame.split("\n");
+    let eventName = "message";
+    const dataParts = [];
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        dataParts.push(line.slice(5).trim());
+      }
+    }
+
+    const dataText = dataParts.join("\n");
+    let data = {};
+
+    if (dataText) {
+      try {
+        data = JSON.parse(dataText);
+      } catch (_parseError) {
+        data = {};
+      }
+    }
+
+    return { eventName, data };
+  }
 
   async function onSubmit(event) {
     event.preventDefault();
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return;
+    }
+
     setLoading(true);
     setError("");
     setMeta(null);
+    setStreamingAnswer("");
+
+    const history = conversation.map((item) => ({
+      role: item.role,
+      content: item.content,
+    }));
+    setConversation((previous) => [...previous, { role: "user", content: trimmedMessage }]);
+    setMessage("");
 
     try {
-      const trimmedMessage = message.trim();
-      const history = conversation.map((item) => ({
-        role: item.role,
-        content: item.content,
-      }));
-
-      const response = await fetch(invokeUrl, {
+      const response = await fetch(streamInvokeUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "text/event-stream",
         },
         body: JSON.stringify({
           message: trimmedMessage,
@@ -39,23 +75,61 @@ export default function HomePage() {
         }),
       });
 
-      const data = await response.json();
       if (!response.ok) {
-        throw new Error(data?.detail || `Request failed with status ${response.status}`);
+        const rawText = await response.text();
+        throw new Error(rawText || `Request failed with status ${response.status}`);
       }
 
-      setConversation((previous) => [
-        ...previous,
-        { role: "user", content: trimmedMessage },
-        { role: "assistant", content: data.answer || "" },
-      ]);
-      setMeta({
-        mcp_servers: data.mcp_servers || [],
-        tool_count: data.tool_count ?? 0,
-      });
-      setMessage("");
+      if (!response.body) {
+        throw new Error("Streaming response body is missing.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulatedAnswer = "";
+      let finalAnswer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() || "";
+
+        for (const frame of frames) {
+          const { eventName, data } = processSseFrame(frame);
+
+          if (eventName === "token") {
+            const token = data.text || "";
+            accumulatedAnswer += token;
+            setStreamingAnswer(accumulatedAnswer);
+          } else if (eventName === "final") {
+            finalAnswer = data.answer || accumulatedAnswer;
+            setMeta({
+              mcp_servers: data.mcp_servers || [],
+              tool_count: data.tool_count ?? 0,
+            });
+          } else if (eventName === "error") {
+            throw new Error(data.detail || "Unexpected error while streaming agent response.");
+          }
+        }
+      }
+
+      const assistantContent = finalAnswer || accumulatedAnswer;
+      if (assistantContent) {
+        setConversation((previous) => [
+          ...previous,
+          { role: "assistant", content: assistantContent },
+        ]);
+      }
+      setStreamingAnswer("");
     } catch (err) {
       setError(err.message || "Unexpected error while calling agent API.");
+      setStreamingAnswer("");
     } finally {
       setLoading(false);
     }
@@ -68,8 +142,8 @@ export default function HomePage() {
         <p className="subtitle">Use this page to call the FastAPI agent endpoint and validate tool-calling behavior.</p>
 
         <div className="metaRow">
-          <span className="label">Agent API:</span>
-          <code>{invokeUrl}</code>
+          <span className="label">Agent Stream API:</span>
+          <code>{streamInvokeUrl}</code>
         </div>
 
         <form onSubmit={onSubmit} className="form">
@@ -119,6 +193,16 @@ export default function HomePage() {
                   </div>
                 </div>
               ))}
+              {loading ? (
+                <div className="message message-assistant">
+                  <div className="messageRole">assistant</div>
+                  <div className="markdownBody">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {streamingAnswer || "Thinking..."}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}

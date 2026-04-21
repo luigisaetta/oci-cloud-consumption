@@ -5,14 +5,17 @@ License: MIT
 Description: FastAPI service exposing HTTP endpoints to invoke the OCI tool-calling assistant.
 """
 
+import asyncio
+import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import StreamingResponse
 
 from agent.tool_calling_agent import ConsumptionToolCallingAgent
 
@@ -152,3 +155,91 @@ async def invoke_agent(payload: AgentInvokeRequest) -> AgentInvokeResponse:
         raise HTTPException(
             status_code=500, detail=f"Agent invocation failed: {exc}"
         ) from exc
+
+
+def _to_sse_event(event: str, data: Dict[str, Any]) -> str:
+    """Serialize one SSE event as a text frame.
+
+    Args:
+        event: Event name.
+        data: JSON-serializable payload.
+
+    Returns:
+        SSE frame string with event and data lines.
+    """
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _chunk_text(text: str, chunk_size: int = 120) -> List[str]:
+    """Split text in fixed-size chunks for progressive SSE delivery.
+
+    Args:
+        text: Text to split.
+        chunk_size: Maximum characters per chunk.
+
+    Returns:
+        List of text chunks preserving original order.
+    """
+    if not text:
+        return []
+    return [text[index : index + chunk_size] for index in range(0, len(text), chunk_size)]
+
+
+@app.post("/agent/invoke/stream")
+async def invoke_agent_stream(payload: AgentInvokeRequest) -> StreamingResponse:
+    """Invoke the tool-calling agent and stream the final answer over SSE.
+
+    The endpoint executes the same tool-calling workflow as `/agent/invoke`, then
+    streams the final answer in chunks as `token` events to support incremental
+    rendering in web clients.
+
+    Args:
+        payload: Input request including current message and optional history.
+
+    Returns:
+        StreamingResponse emitting SSE events:
+        - `start`: request accepted
+        - `token`: partial answer chunk
+        - `final`: final metadata and full answer
+        - `error`: execution error details
+    """
+
+    async def event_stream() -> AsyncIterator[str]:
+        yield _to_sse_event("start", {"status": "accepted"})
+
+        try:
+            history = (
+                [{"role": item.role, "content": item.content} for item in payload.history]
+                if payload.history
+                else None
+            )
+            result = await agent_service.invoke(
+                user_message=payload.message,
+                history=history,
+            )
+            answer = result.get("answer", "")
+
+            for part in _chunk_text(answer):
+                yield _to_sse_event("token", {"text": part})
+                await asyncio.sleep(0)
+
+            yield _to_sse_event(
+                "final",
+                {
+                    "answer": answer,
+                    "mcp_servers": result.get("mcp_servers", []),
+                    "tool_count": result.get("tool_count", 0),
+                },
+            )
+        except Exception as exc:  # pragma: no cover - runtime integration errors
+            yield _to_sse_event("error", {"detail": f"Agent invocation failed: {exc}"})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
