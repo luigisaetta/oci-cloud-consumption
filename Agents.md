@@ -42,6 +42,7 @@ Responsible for:
 
 ## Operating Rules
 - Always follow the current project specifications in `Design.md`.
+- Always use Conda environment `oci-cloud-consumption` for development, tests, linting, and formatting.
 - Prefer small, focused changes.
 - Do not introduce dependencies without a clear reason.
 - Avoid hardcoding secrets, OCIDs, tenancy identifiers, or keys.
@@ -91,16 +92,14 @@ Description: Utility functions for retrieving and normalizing OCI consumption da
 
 ## Useful Commands
 ```bash
-# Project setup (adjust based on stack)
-# python -m venv .venv && source .venv/bin/activate
-# pip install -r requirements.txt
+# Activate project environment
+conda activate oci-cloud-consumption
 
-# Tests (example)
-# pytest -q
+# Or run commands directly in the environment
+conda run -n oci-cloud-consumption pytest -q
 
-# Lint/format (example)
-# ruff check .
-# black .
+conda run -n oci-cloud-consumption pylint path/to/changed_file.py
+conda run -n oci-cloud-consumption black path/to/changed_file.py
 ```
 
 ## Security and Configuration
