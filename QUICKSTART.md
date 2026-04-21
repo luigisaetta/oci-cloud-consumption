@@ -16,14 +16,14 @@ conda activate oci-cloud-consumption
 Core runtime dependencies:
 
 ```bash
-pip install oci fastmcp uvicorn
+pip install -r requirements.txt
 ```
 
 Developer tooling (install only if you plan to modify code and align with
 repository quality standards):
 
 ```bash
-pip install pytest pylint black
+pip install -r requirements-dev.txt
 ```
 
 ## 3) Run the MCP Server (`mcp_consumption`)
