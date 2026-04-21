@@ -65,6 +65,11 @@ The platform provides two main operational modes:
 - Distributed tracing must be supported.
 - Tracing integration with Langfuse on OCI is planned and must be supported by design.
 
+### Failure Handling
+- Agent failures must be captured and logged.
+- Batch executions must report status (success, partial, failed).
+- Failures must not leave the system in an inconsistent state.
+
 ## Governance Rule for Conflicts
 If a requested change conflicts with this specification:
 - implementation must pause before applying the conflicting change;
