@@ -85,6 +85,18 @@ button {
   cursor: pointer;
 }
 
+.buttonRow {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.secondaryButton {
+  background: #eef2f8;
+  color: #334155;
+  border: 1px solid var(--border);
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;

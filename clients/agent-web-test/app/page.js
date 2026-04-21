@@ -135,6 +135,13 @@ export default function HomePage() {
     }
   }
 
+  function onClearConversation() {
+    setConversation([]);
+    setStreamingAnswer("");
+    setMeta(null);
+    setError("");
+  }
+
   return (
     <main className="page">
       <section className="card">
@@ -157,9 +164,19 @@ export default function HomePage() {
             required
           />
 
-          <button type="submit" disabled={loading || !message.trim()}>
-            {loading ? "Invoking agent..." : "Invoke Agent"}
-          </button>
+          <div className="buttonRow">
+            <button type="submit" disabled={loading || !message.trim()}>
+              {loading ? "Invoking agent..." : "Invoke Agent"}
+            </button>
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={onClearConversation}
+              disabled={loading || conversation.length === 0}
+            >
+              Clear Conversation
+            </button>
+          </div>
         </form>
 
         {error ? <div className="error">{error}</div> : null}
