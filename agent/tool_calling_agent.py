@@ -12,6 +12,7 @@ from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from agent.mcp_config import load_mcp_server_connections
+from utils import get_console_logger
 from utils.oci_model import create_chat_oci_genai
 
 SYSTEM_PROMPT = (
@@ -19,6 +20,7 @@ SYSTEM_PROMPT = (
     "Use MCP tools whenever data retrieval or analysis is needed. "
     "Provide concise, accurate, and actionable answers."
 )
+logger = get_console_logger(name="ConsumptionToolCallingAgent")
 
 
 class ConsumptionToolCallingAgent:
@@ -85,6 +87,7 @@ class ConsumptionToolCallingAgent:
         result = await agent_graph.ainvoke({"messages": messages})
 
         result_messages = result.get("messages", [])
+        self._log_tool_calls(result_messages)
         answer = self._extract_answer(result_messages)
 
         return {
@@ -148,3 +151,25 @@ class ConsumptionToolCallingAgent:
             return "\n".join(parts).strip()
 
         return str(content)
+
+    @staticmethod
+    def _log_tool_calls(messages: List[Any]) -> None:
+        """Log each executed tool call with tool name and provided arguments.
+
+        Args:
+            messages: Message list returned by the LangChain agent run.
+        """
+        for message in messages:
+            tool_calls = getattr(message, "tool_calls", None)
+            if not tool_calls:
+                continue
+
+            for tool_call in tool_calls:
+                if isinstance(tool_call, dict):
+                    tool_name = tool_call.get("name", "unknown_tool")
+                    tool_args = tool_call.get("args", {})
+                    logger.info(
+                        "Tool call executed | name=%s | args=%s",
+                        tool_name,
+                        tool_args,
+                    )

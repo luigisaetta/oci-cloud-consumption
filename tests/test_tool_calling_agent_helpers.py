@@ -7,6 +7,7 @@ Description: Unit tests for tool-calling agent helper methods.
 
 from types import SimpleNamespace
 
+import agent.tool_calling_agent as tool_calling_agent_module
 from agent.tool_calling_agent import ConsumptionToolCallingAgent
 
 
@@ -39,3 +40,51 @@ def test_extract_answer_from_list_content_blocks() -> None:
         ]
     )
     assert out == "Part 1\nPart 2"
+
+
+def test_log_tool_calls_logs_name_and_args(monkeypatch) -> None:
+    captured = []
+
+    def fake_info(message, tool_name, tool_args):
+        captured.append((message, tool_name, tool_args))
+
+    monkeypatch.setattr(tool_calling_agent_module.logger, "info", fake_info)
+
+    ConsumptionToolCallingAgent._log_tool_calls(
+        [
+            SimpleNamespace(
+                tool_calls=[
+                    {"name": "tool_a", "args": {"start_day": "2026-04-01"}},
+                    {"name": "tool_b", "args": {"compartment": "lsaetta"}},
+                ]
+            )
+        ]
+    )
+
+    assert captured == [
+        (
+            "Tool call executed | name=%s | args=%s",
+            "tool_a",
+            {"start_day": "2026-04-01"},
+        ),
+        (
+            "Tool call executed | name=%s | args=%s",
+            "tool_b",
+            {"compartment": "lsaetta"},
+        ),
+    ]
+
+
+def test_log_tool_calls_ignores_messages_without_tool_calls(monkeypatch) -> None:
+    captured = []
+
+    def fake_info(*_args):
+        captured.append("called")
+
+    monkeypatch.setattr(tool_calling_agent_module.logger, "info", fake_info)
+
+    ConsumptionToolCallingAgent._log_tool_calls(
+        [SimpleNamespace(content="no tools"), SimpleNamespace(tool_calls=[])]
+    )
+
+    assert captured == []
