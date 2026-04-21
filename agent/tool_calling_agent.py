@@ -26,6 +26,7 @@ SYSTEM_PROMPT = (
     "If a tool returns missing_arguments, call the same tool again with "
     "the required arguments."
 )
+AGENT_RECURSION_LIMIT = 30
 logger = get_console_logger(name="ConsumptionToolCallingAgent")
 
 
@@ -90,7 +91,10 @@ class ConsumptionToolCallingAgent:
         )
 
         messages = self._prepare_messages(user_message=user_message, history=history)
-        result = await agent_graph.ainvoke({"messages": messages})
+        result = await agent_graph.ainvoke(
+            {"messages": messages},
+            config={"recursion_limit": AGENT_RECURSION_LIMIT},
+        )
 
         result_messages = result.get("messages", [])
         self._log_tool_calls(result_messages)
@@ -152,6 +156,7 @@ class ConsumptionToolCallingAgent:
 
         async for event in agent_graph.astream_events(
             {"messages": messages},
+            config={"recursion_limit": AGENT_RECURSION_LIMIT},
             version="v2",
         ):
             event_name = event.get("event")
