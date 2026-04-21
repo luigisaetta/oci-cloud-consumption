@@ -70,6 +70,25 @@ A change is considered ready when:
 - Prefer explicit configuration through environment variables.
 - Add new modules with clear responsibility boundaries.
 
+## Python File Header Policy
+- Every Python file must start with a header containing:
+- `Author: L. Saetta`
+- `Date last modified: YYYY-MM-DD`
+- `License: MIT`
+- `Description: <short description of the file and provided functionality>`
+- All header fields must be written in English.
+- Each time a Python file is modified, `Date last modified` must be updated accordingly.
+
+Example:
+```python
+"""
+Author: L. Saetta
+Date last modified: 2026-04-21
+License: MIT
+Description: Utility functions for retrieving and normalizing OCI consumption data.
+"""
+```
+
 ## Useful Commands
 ```bash
 # Project setup (adjust based on stack)
