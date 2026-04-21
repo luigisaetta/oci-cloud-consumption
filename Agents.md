@@ -123,4 +123,4 @@ Use this format in tickets/prompts:
 - Rollout notes:
 
 ## Mandatory Reference
-- Project specification: [Design.md](/Users/lsaetta/Progetti/oci-cloud-consumption/Design.md)
+- Project specification: [Design.md](./Design.md)

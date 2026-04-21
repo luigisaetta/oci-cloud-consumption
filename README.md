@@ -44,6 +44,6 @@ This project provides an AI-native approach to FinOps and governance on OCI thro
 
 ## Specification-Driven Development
 Project behavior and constraints are defined by the official specification:
-- [Design.md](/Users/lsaetta/Progetti/oci-cloud-consumption/Design.md)
+- [Design.md](./Design.md)
 
 All implementation decisions must remain aligned with that specification unless it is explicitly updated.
