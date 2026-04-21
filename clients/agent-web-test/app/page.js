@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL || "http://127.0.0.1:8100";
 
@@ -90,7 +92,9 @@ export default function HomePage() {
         {answer ? (
           <div className="answerBlock">
             <h2>Assistant Answer</h2>
-            <pre>{answer}</pre>
+            <div className="markdownBody">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+            </div>
           </div>
         ) : null}
       </section>
