@@ -72,28 +72,27 @@ class ConsumptionToolCallingAgent:
 
         connections = load_mcp_server_connections(self.mcp_config_path)
 
-        async with MultiServerMCPClient(connections=connections) as mcp_client:
-            tools = await mcp_client.get_tools()
-            agent_graph = create_agent(
-                model=self.llm,
-                tools=tools,
-                system_prompt=self.system_prompt,
-            )
+        mcp_client = MultiServerMCPClient(connections=connections)
+        tools = await mcp_client.get_tools()
 
-            messages = self._prepare_messages(
-                user_message=user_message, history=history
-            )
-            result = await agent_graph.ainvoke({"messages": messages})
+        agent_graph = create_agent(
+            model=self.llm,
+            tools=tools,
+            system_prompt=self.system_prompt,
+        )
 
-            result_messages = result.get("messages", [])
-            answer = self._extract_answer(result_messages)
+        messages = self._prepare_messages(user_message=user_message, history=history)
+        result = await agent_graph.ainvoke({"messages": messages})
 
-            return {
-                "answer": answer,
-                "messages": result_messages,
-                "mcp_servers": list(connections.keys()),
-                "tool_count": len(tools),
-            }
+        result_messages = result.get("messages", [])
+        answer = self._extract_answer(result_messages)
+
+        return {
+            "answer": answer,
+            "messages": result_messages,
+            "mcp_servers": list(connections.keys()),
+            "tool_count": len(tools),
+        }
 
     @staticmethod
     def _prepare_messages(
