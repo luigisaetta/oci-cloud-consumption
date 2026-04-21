@@ -6,7 +6,7 @@ Description: LangChain tool-calling agent that consumes tools exposed by configu
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -97,6 +97,101 @@ class ConsumptionToolCallingAgent:
             "tool_count": len(tools),
         }
 
+    async def invoke_stream(
+        self,
+        user_message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """Invoke the agent and stream execution events incrementally.
+
+        Args:
+            user_message: Current user request.
+            history: Optional chat history list with dictionaries containing
+                `role` and `content` keys.
+
+        Yields:
+            Dictionaries shaped as:
+            - `{"event": "start", "data": {...}}`
+            - `{"event": "tool_start", "data": {...}}`
+            - `{"event": "tool_end", "data": {...}}`
+            - `{"event": "token", "data": {"text": "..."} }`
+            - `{"event": "final", "data": {...}}`
+
+        Raises:
+            ValueError: If input message is empty.
+        """
+        if not user_message or not user_message.strip():
+            raise ValueError("user_message must be a non-empty string")
+
+        connections = load_mcp_server_connections(self.mcp_config_path)
+        mcp_client = MultiServerMCPClient(connections=connections)
+        tools = await mcp_client.get_tools()
+        agent_graph = create_agent(
+            model=self.llm,
+            tools=tools,
+            system_prompt=self.system_prompt,
+        )
+        messages = self._prepare_messages(user_message=user_message, history=history)
+
+        yield {
+            "event": "start",
+            "data": {
+                "mcp_servers": list(connections.keys()),
+                "tool_count": len(tools),
+            },
+        }
+
+        streamed_parts: List[str] = []
+        final_answer = ""
+
+        async for event in agent_graph.astream_events(
+            {"messages": messages},
+            version="v2",
+        ):
+            event_name = event.get("event")
+            event_data = event.get("data", {})
+
+            if event_name == "on_tool_start":
+                tool_name = event.get("name", "unknown_tool")
+                tool_input = event_data.get("input", {})
+                logger.info(
+                    "Tool call executed | name=%s | args=%s",
+                    tool_name,
+                    tool_input,
+                )
+                yield {
+                    "event": "tool_start",
+                    "data": {"name": tool_name, "args": tool_input},
+                }
+                continue
+
+            if event_name == "on_tool_end":
+                tool_name = event.get("name", "unknown_tool")
+                yield {"event": "tool_end", "data": {"name": tool_name}}
+                continue
+
+            if event_name == "on_chat_model_stream":
+                token_text = self._extract_text_from_chunk(event_data.get("chunk"))
+                if token_text:
+                    streamed_parts.append(token_text)
+                    yield {"event": "token", "data": {"text": token_text}}
+                continue
+
+            if event_name == "on_chain_end":
+                output = event_data.get("output", {})
+                if isinstance(output, dict) and "messages" in output:
+                    final_answer = self._extract_answer(output.get("messages", []))
+
+        answer = final_answer or "".join(streamed_parts).strip()
+        yield {
+            "event": "final",
+            "data": {
+                "answer": answer,
+                "mcp_servers": list(connections.keys()),
+                "tool_count": len(tools),
+            },
+        }
+
     @staticmethod
     def _prepare_messages(
         user_message: str,
@@ -173,3 +268,33 @@ class ConsumptionToolCallingAgent:
                         tool_name,
                         tool_args,
                     )
+
+    @staticmethod
+    def _extract_text_from_chunk(chunk: Any) -> str:
+        """Extract textual token content from a LangChain stream chunk.
+
+        Args:
+            chunk: Streamed chunk object from `on_chat_model_stream`.
+
+        Returns:
+            Extracted text for this chunk, or empty string when unavailable.
+        """
+        if chunk is None:
+            return ""
+
+        content = getattr(chunk, "content", chunk)
+        if isinstance(content, str):
+            return content
+        if isinstance(content, dict):
+            return str(content.get("text") or content.get("content") or "")
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text") or item.get("content")
+                    if text:
+                        parts.append(str(text))
+            return "".join(parts)
+        return ""
