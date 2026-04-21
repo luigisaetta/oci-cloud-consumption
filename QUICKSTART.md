@@ -26,7 +26,15 @@ repository quality standards):
 pip install -r requirements-dev.txt
 ```
 
-## 3) Run the MCP Server (`mcp_consumption`)
+## 3) Create Local Environment File
+
+```bash
+cp .env.sample .env
+```
+
+Then edit `.env` with your real OCI values where needed.
+
+## 4) Run the MCP Server (`mcp_consumption`)
 
 Recommended startup (uvicorn + ASGI app):
 
@@ -46,7 +54,7 @@ Alternative startup (FastMCP runner):
 python mcp/mcp_consumption.py
 ```
 
-## 4) Available MCP Tools
+## 5) Available MCP Tools
 
 The server exposes these four public consumption tools:
 - `tool_get_usage_summary_by_service`
