@@ -1,7 +1,8 @@
 # Quickstart
 
-This guide helps you create the project environment and run the `mcp_consumption`
-server with FastMCP v2 over streamable HTTP.
+This guide provides baseline setup and run instructions for the entire
+`oci-cloud-consumption` project.
+It will be updated as the project evolves.
 
 ## 1) Create Conda Environment
 
@@ -12,8 +13,17 @@ conda activate oci-cloud-consumption
 
 ## 2) Install Required Libraries
 
+Core runtime dependencies:
+
 ```bash
-pip install oci fastmcp uvicorn pytest pylint black
+pip install oci fastmcp uvicorn
+```
+
+Developer tooling (install only if you plan to modify code and align with
+repository quality standards):
+
+```bash
+pip install pytest pylint black
 ```
 
 ## 3) Run the MCP Server (`mcp_consumption`)
