@@ -37,7 +37,6 @@ class RankedEntry:
     label: str
     total_month: float
     percentage: float
-    total_overall: float
 
 
 def _parse_month_year(month_year: str) -> Tuple[int, int]:
@@ -110,7 +109,6 @@ def _build_ranked_entries(
                 label=_row_label(row, label_keys, fallback="<unknown>"),
                 total_month=round(total_month, 2),
                 percentage=round(percentage, 2),
-                total_overall=round(total_overall, 2),
             )
         )
     return entries
@@ -121,17 +119,14 @@ def _render_section(
 ) -> List[str]:
     """Render one markdown table section."""
     lines = [f"## {title}", ""]
-    lines.append(
-        f"| # | {label_header} | Monthly Total | % of Overall Total | Overall Total |"
-    )
-    lines.append("|---:|---|---:|---:|---:|")
+    lines.append(f"| # | {label_header} | Monthly Total | % of Overall Total |")
+    lines.append("|---:|---|---:|---:|")
     if not entries:
-        lines.append("| 1 | <no data> | 0.00 | 0.00% | 0.00 |")
+        lines.append("| 1 | <no data> | 0.00 | 0.00% |")
     else:
         for index, entry in enumerate(entries, start=1):
             lines.append(
-                f"| {index} | {entry.label} | {entry.total_month:.2f} | "
-                f"{entry.percentage:.2f}% | {entry.total_overall:.2f} |"
+                f"| {index} | {entry.label} | {entry.total_month:.2f} | {entry.percentage:.2f}% |"
             )
     lines.append("")
     return lines
