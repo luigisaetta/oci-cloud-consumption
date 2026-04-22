@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-21
+Date last modified: 2026-04-22
 License: MIT
 Description: LangChain tool-calling agent that consumes tools exposed by configured MCP servers.
 """
@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from agent.mcp_config import load_mcp_server_connections
+from agent.mcp_config import load_mcp_server_connections, load_mcp_server_statuses
 from utils import get_console_logger
 from utils.oci_model import create_chat_oci_genai
 
@@ -88,6 +88,7 @@ class ConsumptionToolCallingAgent:
             raise ValueError("user_message must be a non-empty string")
 
         connections = load_mcp_server_connections(self.mcp_config_path)
+        server_statuses = load_mcp_server_statuses(self.mcp_config_path)
 
         mcp_client = MultiServerMCPClient(connections=connections)
         tools = await mcp_client.get_tools()
@@ -104,7 +105,9 @@ class ConsumptionToolCallingAgent:
             result_messages = result.get("messages", [])
             self._log_tool_calls(result_messages)
             answer = self._extract_answer(result_messages)
-            invoked_tool_calls, used_tools = self._collect_tool_call_stats(result_messages)
+            invoked_tool_calls, used_tools = self._collect_tool_call_stats(
+                result_messages
+            )
             self._log_agent_event(
                 operation="invoke",
                 status="success",
@@ -116,6 +119,7 @@ class ConsumptionToolCallingAgent:
                 "answer": answer,
                 "messages": result_messages,
                 "mcp_servers": list(connections.keys()),
+                "mcp_server_statuses": server_statuses,
                 "tool_count": len(tools),
             }
         except Exception as exc:  # pragma: no cover - runtime integration behavior
@@ -153,6 +157,7 @@ class ConsumptionToolCallingAgent:
             raise ValueError("user_message must be a non-empty string")
 
         connections = load_mcp_server_connections(self.mcp_config_path)
+        server_statuses = load_mcp_server_statuses(self.mcp_config_path)
         mcp_client = MultiServerMCPClient(connections=connections)
         tools = await mcp_client.get_tools()
         agent_graph = create_agent(
@@ -166,6 +171,7 @@ class ConsumptionToolCallingAgent:
             "event": "start",
             "data": {
                 "mcp_servers": list(connections.keys()),
+                "mcp_server_statuses": server_statuses,
                 "tool_count": len(tools),
             },
         }
@@ -214,7 +220,9 @@ class ConsumptionToolCallingAgent:
                             continue
 
                         if event_name == "on_chat_model_stream":
-                            token_text = self._extract_text_from_chunk(event_data.get("chunk"))
+                            token_text = self._extract_text_from_chunk(
+                                event_data.get("chunk")
+                            )
                             if token_text:
                                 streamed_parts.append(token_text)
                                 emitted_any_output = True
@@ -224,10 +232,14 @@ class ConsumptionToolCallingAgent:
                         if event_name == "on_chain_end":
                             output = event_data.get("output", {})
                             if isinstance(output, dict) and "messages" in output:
-                                final_answer = self._extract_answer(output.get("messages", []))
+                                final_answer = self._extract_answer(
+                                    output.get("messages", [])
+                                )
 
                     break
-                except Exception as exc:  # pragma: no cover - runtime integration behavior
+                except (
+                    Exception
+                ) as exc:  # pragma: no cover - runtime integration behavior
                     retryable = self._is_retryable_llm_error(exc)
                     has_attempts_left = attempt < LLM_MAX_RETRIES
                     if retryable and has_attempts_left and not emitted_any_output:
@@ -256,6 +268,7 @@ class ConsumptionToolCallingAgent:
                 "data": {
                     "answer": answer,
                     "mcp_servers": list(connections.keys()),
+                    "mcp_server_statuses": server_statuses,
                     "tool_count": len(tools),
                 },
             }
@@ -267,6 +280,10 @@ class ConsumptionToolCallingAgent:
                 invoked_tool_calls=invoked_tool_calls,
             )
             raise
+
+    def get_mcp_server_statuses(self) -> List[Dict[str, Any]]:
+        """Return configured MCP servers with enabled/disabled state."""
+        return load_mcp_server_statuses(self.mcp_config_path)
 
     @staticmethod
     def _prepare_messages(
@@ -422,7 +439,9 @@ class ConsumptionToolCallingAgent:
         payload.update(extra)
         logger.info("%s", json.dumps(payload, default=str, sort_keys=True))
 
-    async def _ainvoke_with_retry(self, agent_graph: Any, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    async def _ainvoke_with_retry(
+        self, agent_graph: Any, messages: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
         """Invoke the agent graph with retries for transient OCI LLM failures.
 
         Args:

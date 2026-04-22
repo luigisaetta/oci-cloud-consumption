@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-21
+Date last modified: 2026-04-22
 License: MIT
 Description: Unit tests for MCP server configuration loading.
 """
@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from agent.mcp_config import load_mcp_server_connections
+from agent.mcp_config import load_mcp_server_connections, load_mcp_server_statuses
 
 
 def test_load_mcp_server_connections_happy_path(tmp_path) -> None:
@@ -50,6 +50,44 @@ def test_load_mcp_server_connections_ignores_disabled(tmp_path) -> None:
         load_mcp_server_connections(str(path))
 
 
+def test_load_mcp_server_connections_enabled_defaults_to_true(tmp_path) -> None:
+    cfg = {
+        "servers": [
+            {
+                "name": "consumption",
+                "url": "http://127.0.0.1:8000/mcp",
+            }
+        ]
+    }
+    path = tmp_path / "mcp_servers.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    connections = load_mcp_server_connections(str(path))
+    assert "consumption" in connections
+
+
 def test_load_mcp_server_connections_missing_file() -> None:
     with pytest.raises(FileNotFoundError):
         load_mcp_server_connections("/tmp/this_file_does_not_exist_mcp_servers.json")
+
+
+def test_load_mcp_server_statuses_reports_enabled_flags(tmp_path) -> None:
+    cfg = {
+        "servers": [
+            {"name": "consumption", "url": "http://127.0.0.1:8000/mcp"},
+            {
+                "name": "other",
+                "url": "http://127.0.0.1:9000/mcp",
+                "enabled": False,
+            },
+        ]
+    }
+    path = tmp_path / "mcp_servers.json"
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+    statuses = load_mcp_server_statuses(str(path))
+
+    assert statuses == [
+        {"name": "consumption", "enabled": True},
+        {"name": "other", "enabled": False},
+    ]

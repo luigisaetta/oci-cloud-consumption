@@ -7,15 +7,38 @@ import remarkGfm from "remark-gfm";
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL || "http://127.0.0.1:8100";
 
 export default function HomePage() {
+  const [agentUrl, setAgentUrl] = useState(DEFAULT_API_URL);
   const [message, setMessage] = useState("Show me OCI consumption by service for the last 7 days.");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [conversation, setConversation] = useState([]);
   const [streamingAnswer, setStreamingAnswer] = useState("");
   const [meta, setMeta] = useState(null);
+  const [mcpStatuses, setMcpStatuses] = useState([]);
   const messageListRef = useRef(null);
 
-  const streamInvokeUrl = useMemo(() => `${DEFAULT_API_URL}/agent/invoke/stream`, []);
+  const normalizedAgentUrl = useMemo(() => {
+    const trimmed = agentUrl.trim();
+    if (!trimmed) {
+      return DEFAULT_API_URL;
+    }
+    return trimmed.replace(/\/+$/, "");
+  }, [agentUrl]);
+  const streamInvokeUrl = useMemo(
+    () => `${normalizedAgentUrl}/agent/invoke/stream`,
+    [normalizedAgentUrl]
+  );
+  const mcpServerConfigUrl = useMemo(
+    () => `${normalizedAgentUrl}/agent/mcp-servers`,
+    [normalizedAgentUrl]
+  );
+  const displayedMcpServers = useMemo(
+    () =>
+      meta?.mcp_server_statuses?.length
+        ? meta.mcp_server_statuses
+        : mcpStatuses,
+    [meta, mcpStatuses]
+  );
 
   function processSseFrame(frame) {
     const lines = frame.split("\n");
@@ -50,6 +73,30 @@ export default function HomePage() {
     }
     messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
   }, [conversation, streamingAnswer, loading]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMcpServerStatuses() {
+      try {
+        const response = await fetch(mcpServerConfigUrl);
+        if (!response.ok) {
+          return;
+        }
+        const data = await response.json();
+        if (!cancelled && Array.isArray(data)) {
+          setMcpStatuses(data);
+        }
+      } catch (_error) {
+        // Keep UI resilient when backend metadata endpoint is unavailable.
+      }
+    }
+
+    loadMcpServerStatuses();
+    return () => {
+      cancelled = true;
+    };
+  }, [mcpServerConfigUrl]);
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -117,8 +164,15 @@ export default function HomePage() {
             setStreamingAnswer(accumulatedAnswer);
           } else if (eventName === "final") {
             finalAnswer = data.answer || accumulatedAnswer;
+            const statuses = Array.isArray(data.mcp_server_statuses)
+              ? data.mcp_server_statuses
+              : [];
+            if (statuses.length) {
+              setMcpStatuses(statuses);
+            }
             setMeta({
               mcp_servers: data.mcp_servers || [],
+              mcp_server_statuses: statuses,
               tool_count: data.tool_count ?? 0,
             });
           } else if (eventName === "error") {
@@ -169,8 +223,34 @@ export default function HomePage() {
 
         <div className="metaCard">
           <h2>Connection</h2>
+          <label className="label" htmlFor="agent-url">
+            AGENT_URL
+          </label>
+          <input
+            id="agent-url"
+            className="endpointInput"
+            type="text"
+            value={agentUrl}
+            onChange={(event) => setAgentUrl(event.target.value)}
+            placeholder="http://127.0.0.1:8100"
+          />
           <p className="label">Stream Endpoint</p>
           <code className="endpoint">{streamInvokeUrl}</code>
+        </div>
+
+        <div className="metaCard">
+          <h2>MCP Servers</h2>
+          <div className="serverList">
+            {displayedMcpServers.length === 0 ? <p>-</p> : null}
+            {displayedMcpServers.map((server) => (
+              <span
+                key={server.name}
+                className={`serverBadge ${server.enabled ? "enabled" : "disabled"}`}
+              >
+                {server.name}
+              </span>
+            ))}
+          </div>
         </div>
 
         <div className="metaCard">

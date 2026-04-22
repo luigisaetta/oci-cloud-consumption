@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-21
+Date last modified: 2026-04-22
 License: MIT
 Description: FastAPI service exposing HTTP endpoints to invoke the OCI tool-calling assistant.
 """
@@ -65,6 +65,7 @@ class AgentInvokeResponse(BaseModel):
 
     answer: str
     mcp_servers: List[str]
+    mcp_server_statuses: List[Dict[str, Any]] = Field(default_factory=list)
     tool_count: int
     messages: List[Any]
 
@@ -117,6 +118,17 @@ async def health() -> Dict[str, str]:
         Dictionary containing service status.
     """
     return {"status": "ok"}
+
+
+@app.get("/agent/mcp-servers")
+async def list_mcp_servers() -> List[Dict[str, Any]]:
+    """Return configured MCP servers and their enabled state."""
+    try:
+        return agent_service.get_mcp_server_statuses()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/agent/invoke", response_model=AgentInvokeResponse)
@@ -192,7 +204,10 @@ async def invoke_agent_stream(payload: AgentInvokeRequest) -> StreamingResponse:
 
         try:
             history = (
-                [{"role": item.role, "content": item.content} for item in payload.history]
+                [
+                    {"role": item.role, "content": item.content}
+                    for item in payload.history
+                ]
                 if payload.history
                 else None
             )
@@ -206,7 +221,9 @@ async def invoke_agent_stream(payload: AgentInvokeRequest) -> StreamingResponse:
                 )
         except ValueError as exc:
             yield _to_sse_event("error", {"detail": str(exc)})
-        except Exception as exc:  # pragma: no cover - runtime integration errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover  # pylint: disable=broad-exception-caught
             yield _to_sse_event("error", {"detail": f"Agent invocation failed: {exc}"})
 
     return StreamingResponse(
