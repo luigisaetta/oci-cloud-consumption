@@ -99,6 +99,16 @@ def _save_report(markdown: str, output_path: Path) -> None:
     output_path.write_text(markdown, encoding="utf-8")
 
 
+def _default_monthly_filename(month: str) -> str:
+    """Build canonical default filename for monthly reports."""
+    return f"monthly-report-{month}.md"
+
+
+def _default_range_filename(start_month: str, end_month: str) -> str:
+    """Build canonical default filename for range reports."""
+    return f"range-report-{start_month}_to_{end_month}.md"
+
+
 def _render_header() -> None:
     """Render top header panel."""
     title = Text("OCI Cloud Consumption - Batch Menu", style="bold cyan")
@@ -180,7 +190,7 @@ def _run_monthly(agent: BatchConsumptionReportAgent) -> None:
     console.print("\n[bold]Monthly report wizard[/bold]")
     month = _normalize_month(Prompt.ask("Target month (YYYY-MM or MM-YYYY)"))
     options = _collect_common_options()
-    default_name = f"monthly-report-{month.replace('-', '')}.md"
+    default_name = _default_monthly_filename(month)
     output_path = Path(
         Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
     )
@@ -225,10 +235,7 @@ def _run_range(agent: BatchConsumptionReportAgent) -> None:
     month_list = _months_between(start_month, end_month)
     normalized_start = month_list[0]
     normalized_end = month_list[-1]
-    default_name = (
-        f"range-report-{normalized_start.replace('-', '')}-to-"
-        f"{normalized_end.replace('-', '')}.md"
-    )
+    default_name = _default_range_filename(normalized_start, normalized_end)
     output_path = Path(
         Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
     )

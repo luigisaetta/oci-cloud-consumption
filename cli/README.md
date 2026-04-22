@@ -63,6 +63,9 @@ Output:
 - Top N: `10`
 - Profile: `DEFAULT`
 - Output directory: `reports/`
+- Canonical output names:
+  - Monthly: `monthly-report-YYYY-MM.md`
+  - Range: `range-report-YYYY-MM_to_YYYY-MM.md`
 
 ## Notes
 
