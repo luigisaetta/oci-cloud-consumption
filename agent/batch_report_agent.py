@@ -14,10 +14,15 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from dotenv import load_dotenv
+
 # Ensure project root is importable when the script is executed directly.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# Load project .env so OCI_REGION / auth settings are honored in CLI mode.
+load_dotenv(PROJECT_ROOT / ".env")
 
 from utils.consumption_utils import (
     get_usage_summary_by_compartment,
