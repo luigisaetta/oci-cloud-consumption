@@ -59,24 +59,8 @@ Optional arguments:
 python agent/batch_report_agent.py 2026-03 > report_2026-03.md
 ```
 
----
-
-## 3) `mcp_config.py`
-
-### What it does
-- Loads MCP server configuration from JSON.
-- Exposes:
-  - enabled server connections for runtime
-  - full server status list (enabled/disabled) for UI metadata
-
-### Typical usage
-- Internal utility used by `tool_calling_agent.py`.
-
----
-
 ## Where to document agents?
 
 Best practice for this project:
 - Keep the detailed operational guide here in `agent/README.md` (closest to code).
 - Keep high-level architecture and onboarding references in root `README.md` and `docs/`.
-
