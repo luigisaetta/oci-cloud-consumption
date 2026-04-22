@@ -74,6 +74,18 @@ The server exposes these four public consumption tools:
 - `tool_fetch_consumption_by_compartment`
 - `tool_usage_summary_by_service_for_compartment`
 
+## 7) Run Monthly Batch Report Agent
+
+Generate monthly top-10 report by compartment and service:
+
+```bash
+python agent/batch_report_agent.py 2026-04
+```
+
+Accepted month formats:
+- `YYYY-MM` (for example `2026-04`)
+- `MM-YYYY` (for example `04-2026`)
+
 ## Notes
 
 - OCI authentication follows the backend logic in `utils/oci_utils.py`:
