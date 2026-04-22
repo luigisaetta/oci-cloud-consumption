@@ -1,13 +1,17 @@
 # Batch CLI Menu
 
 Interactive command-line utility to run batch agents and save markdown reports.
+The interface is built with `rich` for a more visual terminal experience.
 
 ## What it provides
 
 - Text menu with user-friendly options:
   - `[1] Monthly report`
   - `[2] Range report`
-- Guided prompts for required inputs.
+- Guided prompts (wizard-style) for required inputs.
+- Run preview table before execution.
+- Confirmation prompt before launching the batch job.
+- Post-run preview of saved markdown output.
 - Automatic markdown output saved to file.
 
 ## Run
@@ -16,6 +20,12 @@ From repository root:
 
 ```bash
 python cli/batch_menu.py
+```
+
+If `rich` is missing:
+
+```bash
+pip install -r requirements.txt
 ```
 
 ## Menu flows

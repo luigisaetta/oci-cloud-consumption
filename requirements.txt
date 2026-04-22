@@ -6,3 +6,4 @@ langchain==1.2.15
 langchain-oci==0.2.5
 langchain-mcp-adapters==0.2.2
 python-dotenv==1.2.2
+rich>=13.7,<15

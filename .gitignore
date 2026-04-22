@@ -58,5 +58,8 @@ Thumbs.db
 # Logs
 *.log
 
+# Generated batch reports
+reports/
+
 # Jupyter
 .ipynb_checkpoints/

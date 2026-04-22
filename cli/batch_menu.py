@@ -2,7 +2,7 @@
 Author: L. Saetta
 Date last modified: 2026-04-22
 License: MIT
-Description: Interactive CLI menu to run batch agents and save markdown reports.
+Description: Interactive rich CLI menu to run batch agents and save markdown reports.
 """
 
 from __future__ import annotations
@@ -12,6 +12,12 @@ from datetime import datetime
 from pathlib import Path
 import sys
 from typing import List, Optional, Tuple
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.table import Table
+from rich.text import Text
 
 # Ensure project root imports work when running this script directly.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +29,7 @@ from agent.batch_report_agent import (  # pylint: disable=wrong-import-position
 )
 
 OUTPUT_DIR = Path("reports")
+console = Console()
 
 
 @dataclass
@@ -42,11 +49,11 @@ def _parse_month(month_value: str) -> Tuple[int, int]:
     if len(parts) != 2:
         raise ValueError("Invalid month format. Use YYYY-MM or MM-YYYY.")
 
-    a, b = parts[0], parts[1]
-    if len(a) == 4 and len(b) == 2:
-        year, month = int(a), int(b)
-    elif len(a) == 2 and len(b) == 4:
-        year, month = int(b), int(a)
+    first, second = parts[0], parts[1]
+    if len(first) == 4 and len(second) == 2:
+        year, month = int(first), int(second)
+    elif len(first) == 2 and len(second) == 4:
+        year, month = int(second), int(first)
     else:
         raise ValueError("Invalid month format. Use YYYY-MM or MM-YYYY.")
 
@@ -58,6 +65,12 @@ def _parse_month(month_value: str) -> Tuple[int, int]:
 def _format_month(year: int, month: int) -> str:
     """Format month as YYYY-MM."""
     return f"{year:04d}-{month:02d}"
+
+
+def _normalize_month(month_value: str) -> str:
+    """Normalize month input into YYYY-MM."""
+    year, month = _parse_month(month_value)
+    return _format_month(year, month)
 
 
 def _months_between(start_month: str, end_month: str) -> List[str]:
@@ -80,45 +93,51 @@ def _months_between(start_month: str, end_month: str) -> List[str]:
     return out
 
 
-def _ask(prompt: str, default: Optional[str] = None) -> str:
-    """Read one input value with optional default."""
-    suffix = f" [{default}]" if default else ""
-    value = input(f"{prompt}{suffix}: ").strip()
-    if not value and default is not None:
-        return default
-    return value
+def _save_report(markdown: str, output_path: Path) -> None:
+    """Persist markdown output to file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(markdown, encoding="utf-8")
 
 
-def _print_header() -> None:
-    """Render a compact visual header."""
-    print("")
-    print("==============================================")
-    print(" OCI Cloud Consumption - Batch Menu")
-    print("==============================================")
-    print("")
+def _render_header() -> None:
+    """Render top header panel."""
+    title = Text("OCI Cloud Consumption - Batch Menu", style="bold cyan")
+    subtitle = Text(
+        "Interactive runner for monthly and range markdown reports",
+        style="dim",
+    )
+    console.print(Panel.fit(Text.assemble(title, "\n", subtitle), border_style="blue"))
 
 
-def _print_menu() -> None:
-    """Render menu options."""
-    print("[1] Monthly report")
-    print("[2] Range report")
-    print("[0] Exit")
-    print("")
+def _render_main_menu() -> None:
+    """Render the main options table."""
+    table = Table(title="Available Batch Jobs", show_lines=False)
+    table.add_column("Option", style="bold", justify="center", width=8)
+    table.add_column("Name", style="green")
+    table.add_column("Description", style="white")
+    table.add_row("1", "Monthly report", "Top compartments and services for one month")
+    table.add_row(
+        "2",
+        "Range report",
+        "Generate one markdown report containing all months in a range",
+    )
+    table.add_row("0", "Exit", "Quit the menu")
+    console.print(table)
 
 
 def _collect_common_options() -> RunOptions:
     """Collect shared options for batch report generation."""
-    query_type = _ask("Query type (COST or USAGE)", "COST").upper()
-    if query_type not in {"COST", "USAGE"}:
-        raise ValueError("query_type must be COST or USAGE.")
-
-    top_n_raw = _ask("Top N rows", "10")
-    top_n = int(top_n_raw)
+    console.print("\n[bold]Report options[/bold]")
+    query_type = Prompt.ask("Query type", choices=["COST", "USAGE"], default="COST")
+    top_n = IntPrompt.ask("Top N rows", default=10)
     if top_n < 1:
         raise ValueError("Top N must be >= 1.")
 
-    profile = _ask("OCI profile", "DEFAULT")
-    auth_type_raw = _ask("Auth type (AUTO/API_KEY/RESOURCE_PRINCIPAL or empty)", "")
+    profile = Prompt.ask("OCI profile", default="DEFAULT")
+    auth_type_raw = Prompt.ask(
+        "Auth type (AUTO/API_KEY/RESOURCE_PRINCIPAL or empty)",
+        default="",
+    ).strip()
     auth_type = auth_type_raw or None
 
     return RunOptions(
@@ -129,37 +148,78 @@ def _collect_common_options() -> RunOptions:
     )
 
 
-def _save_report(markdown: str, output_path: Path) -> None:
-    """Persist markdown output to file."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(markdown, encoding="utf-8")
+def _preview_plan(rows: List[Tuple[str, str]]) -> None:
+    """Show execution plan as a compact table."""
+    table = Table(title="Run Preview")
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+    for key, value in rows:
+        table.add_row(key, value)
+    console.print(table)
 
 
-def _monthly_report_flow(agent: BatchConsumptionReportAgent) -> None:
+def _show_saved_file_preview(output_path: Path, max_lines: int = 14) -> None:
+    """Show first lines of saved markdown file."""
+    try:
+        lines = output_path.read_text(encoding="utf-8").splitlines()
+    except Exception:  # pylint: disable=broad-exception-caught
+        return
+
+    preview = "\n".join(lines[:max_lines]).strip() or "<empty file>"
+    console.print(
+        Panel(
+            preview,
+            title=f"Saved Report Preview ({min(len(lines), max_lines)} lines)",
+            border_style="green",
+        )
+    )
+
+
+def _run_monthly(agent: BatchConsumptionReportAgent) -> None:
     """Run monthly report flow."""
-    month = _ask("Target month (YYYY-MM or MM-YYYY)")
+    console.print("\n[bold]Monthly report wizard[/bold]")
+    month = _normalize_month(Prompt.ask("Target month (YYYY-MM or MM-YYYY)"))
     options = _collect_common_options()
     default_name = f"monthly-report-{month.replace('-', '')}.md"
-    output_raw = _ask("Output file", str(OUTPUT_DIR / default_name))
-    output_path = Path(output_raw)
-
-    markdown = agent.generate_report(
-        month_year=month,
-        query_type=options.query_type,
-        top_n=options.top_n,
-        config_profile=options.profile,
-        auth_type=options.auth_type,
+    output_path = Path(
+        Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
     )
-    _save_report(markdown, output_path)
-    print("")
-    print(f"Report generated: {output_path}")
-    print("")
+
+    _preview_plan(
+        [
+            ("Job", "Monthly report"),
+            ("Month", month),
+            ("Query type", options.query_type),
+            ("Top N", str(options.top_n)),
+            ("Profile", options.profile),
+            ("Auth type", options.auth_type or "<auto>"),
+            ("Output", str(output_path)),
+        ]
+    )
+    if not Confirm.ask("Run this job now?", default=True):
+        console.print("[yellow]Cancelled.[/yellow]\n")
+        return
+
+    with console.status("[bold green]Running monthly report...[/bold green]"):
+        markdown = agent.generate_report(
+            month_year=month,
+            query_type=options.query_type,
+            top_n=options.top_n,
+            config_profile=options.profile,
+            auth_type=options.auth_type,
+        )
+        _save_report(markdown, output_path)
+
+    console.print(f"\n[bold green]Report generated:[/bold green] {output_path}\n")
+    _show_saved_file_preview(output_path)
+    console.print("")
 
 
-def _range_report_flow(agent: BatchConsumptionReportAgent) -> None:
+def _run_range(agent: BatchConsumptionReportAgent) -> None:
     """Run range report flow by stitching monthly report outputs."""
-    start_month = _ask("Start month (YYYY-MM or MM-YYYY)")
-    end_month = _ask("End month (YYYY-MM or MM-YYYY)")
+    console.print("\n[bold]Range report wizard[/bold]")
+    start_month = _normalize_month(Prompt.ask("Start month (YYYY-MM or MM-YYYY)"))
+    end_month = _normalize_month(Prompt.ask("End month (YYYY-MM or MM-YYYY)"))
     options = _collect_common_options()
 
     month_list = _months_between(start_month, end_month)
@@ -169,8 +229,26 @@ def _range_report_flow(agent: BatchConsumptionReportAgent) -> None:
         f"range-report-{normalized_start.replace('-', '')}-to-"
         f"{normalized_end.replace('-', '')}.md"
     )
-    output_raw = _ask("Output file", str(OUTPUT_DIR / default_name))
-    output_path = Path(output_raw)
+    output_path = Path(
+        Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
+    )
+
+    _preview_plan(
+        [
+            ("Job", "Range report"),
+            ("Start", normalized_start),
+            ("End", normalized_end),
+            ("Months", str(len(month_list))),
+            ("Query type", options.query_type),
+            ("Top N", str(options.top_n)),
+            ("Profile", options.profile),
+            ("Auth type", options.auth_type or "<auto>"),
+            ("Output", str(output_path)),
+        ]
+    )
+    if not Confirm.ask("Run this job now?", default=True):
+        console.print("[yellow]Cancelled.[/yellow]\n")
+        return
 
     report_lines: List[str] = []
     report_lines.append("# OCI Consumption Range Report")
@@ -182,49 +260,51 @@ def _range_report_flow(agent: BatchConsumptionReportAgent) -> None:
     )
     report_lines.append("")
 
-    for index, month in enumerate(month_list, start=1):
-        report_lines.append(f"## Monthly Report {index}: {month}")
-        report_lines.append("")
-        report_lines.append(
-            agent.generate_report(
-                month_year=month,
-                query_type=options.query_type,
-                top_n=options.top_n,
-                config_profile=options.profile,
-                auth_type=options.auth_type,
-            ).strip()
-        )
-        report_lines.append("")
+    with console.status("[bold green]Running range report...[/bold green]"):
+        for index, month in enumerate(month_list, start=1):
+            report_lines.append(f"## Monthly Report {index}: {month}")
+            report_lines.append("")
+            report_lines.append(
+                agent.generate_report(
+                    month_year=month,
+                    query_type=options.query_type,
+                    top_n=options.top_n,
+                    config_profile=options.profile,
+                    auth_type=options.auth_type,
+                ).strip()
+            )
+            report_lines.append("")
+        _save_report("\n".join(report_lines).strip() + "\n", output_path)
 
-    _save_report("\n".join(report_lines).strip() + "\n", output_path)
-    print("")
-    print(f"Range report generated: {output_path}")
-    print("")
+    console.print(f"\n[bold green]Range report generated:[/bold green] {output_path}\n")
+    _show_saved_file_preview(output_path)
+    console.print("")
 
 
 def main() -> int:
     """Entry point for batch interactive menu."""
     agent = BatchConsumptionReportAgent()
+
     while True:
-        _print_header()
-        _print_menu()
-        choice = _ask("Select option", "1")
         try:
+            console.clear()
+            _render_header()
+            _render_main_menu()
+            choice = Prompt.ask("Select option", choices=["0", "1", "2"], default="1")
             if choice == "0":
-                print("Goodbye.")
+                console.print("\n[bold]Goodbye.[/bold]")
                 return 0
             if choice == "1":
-                _monthly_report_flow(agent)
+                _run_monthly(agent)
             elif choice == "2":
-                _range_report_flow(agent)
-            else:
-                print("")
-                print("Invalid option. Please select 0, 1, or 2.")
-                print("")
+                _run_range(agent)
+            Prompt.ask("Press Enter to continue", default="")
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted by user.[/yellow]")
+            return 130
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            print("")
-            print(f"ERROR: {exc}")
-            print("")
+            console.print(f"\n[bold red]ERROR:[/bold red] {exc}\n")
+            Prompt.ask("Press Enter to continue", default="")
 
 
 if __name__ == "__main__":
