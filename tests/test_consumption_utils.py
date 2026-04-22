@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-21
+Date last modified: 2026-04-22
 License: MIT
 Description: Unit tests for OCI consumption aggregation utilities.
 """
@@ -109,7 +109,7 @@ def test_get_usage_summary_by_service(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         consumption_utils,
         "make_oci_client",
-        lambda _profile: (
+        lambda _profile, **_kwargs: (
             FakeUsageClient(),
             {"tenancy": "ocid1.tenancy.oc1..x", "region": "eu-milan-1"},
         ),
@@ -141,7 +141,7 @@ def test_fetch_consumption_by_compartment_server_side_path(
     monkeypatch.setattr(
         consumption_utils,
         "make_oci_client",
-        lambda _profile: (
+        lambda _profile, **_kwargs: (
             object(),
             {"tenancy": "ocid1.tenancy.oc1..t", "region": "eu-milan-1"},
         ),
@@ -218,7 +218,7 @@ def test_usage_summary_by_service_for_compartment_cost_path(
     monkeypatch.setattr(
         consumption_utils,
         "make_oci_client",
-        lambda _profile: (
+        lambda _profile, **_kwargs: (
             FakeUsageClient(),
             {"tenancy": "ocid1.tenancy.oc1..t", "region": "eu-milan-1"},
         ),

@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-21
+Date last modified: 2026-04-22
 License: MIT
 Description: Reusable OCI helper functions for auth, identity, and response normalization.
 """
@@ -16,43 +16,97 @@ from utils import get_console_logger
 
 logger = get_console_logger()
 
+VALID_AUTH_TYPES = ("AUTO", "API_KEY", "RESOURCE_PRINCIPAL")
+
+
+def _normalize_auth_type(auth_type: Optional[str]) -> str:
+    """Normalize and validate OCI authentication strategy.
+
+    Accepted values are `AUTO`, `API_KEY`/`USER_PRINCIPAL`,
+    and `RESOURCE_PRINCIPAL`.
+    """
+    raw_value = auth_type
+    if raw_value is None:
+        raw_value = os.getenv("OCI_AUTH_TYPE", "AUTO")
+
+    normalized = (raw_value or "AUTO").strip().upper().replace("-", "_")
+    if normalized == "USER_PRINCIPAL":
+        normalized = "API_KEY"
+
+    if normalized not in VALID_AUTH_TYPES:
+        raise ValueError(
+            "auth_type must be one of AUTO, API_KEY (or USER_PRINCIPAL), "
+            "RESOURCE_PRINCIPAL"
+        )
+    return normalized
+
+
+def _resolve_profile_name(config_profile: Optional[str]) -> str:
+    """Resolve OCI profile name from explicit value, env var, or default."""
+    explicit = (config_profile or "").strip()
+    if explicit:
+        return explicit
+
+    env_profile = (os.getenv("OCI_CONFIG_PROFILE") or "").strip()
+    if env_profile:
+        return env_profile
+
+    return "DEFAULT"
+
+
+def _build_resource_principal_client(
+    env_region: str,
+) -> Tuple[UsageapiClient, Dict[str, Any]]:
+    """Create Usage API client with resource principal authentication."""
+    logger.info("Using RESOURCE_PRINCIPAL authentication")
+    signer = oci.auth.signers.get_resource_principals_signer()
+    cfg = {"region": env_region or signer.region, "tenancy": signer.tenancy_id}
+    return UsageapiClient(cfg, signer=signer, timeout=60.0), cfg
+
 
 def make_oci_client(
     config_profile: Optional[str],
+    *,
+    auth_type: Optional[str] = None,
 ) -> Tuple[UsageapiClient, Dict[str, Any]]:
     """Create an OCI Usage API client using profile config or resource principals.
 
     Args:
-        config_profile: OCI profile name. If unavailable, resource principal auth
-            is used.
+        config_profile: OCI profile name.
+        auth_type: Authentication strategy. Supported values:
+            `AUTO`, `API_KEY`/`USER_PRINCIPAL`, `RESOURCE_PRINCIPAL`.
 
     Returns:
         Tuple `(UsageapiClient, config_dict)` where config contains at least
         `region` and `tenancy`.
     """
-    cfg: Optional[Dict[str, Any]] = None
-    try:
-        if config_profile:
-            cfg = oci.config.from_file(profile_name=config_profile)
-    except Exception as exc:  # pragma: no cover - depends on runtime auth context
-        logger.warning(
-            "Could not load OCI profile '%s', falling back to resource principals: %s",
-            config_profile,
-            exc,
-        )
-        cfg = None
-
+    strategy = _normalize_auth_type(auth_type)
     env_region = (os.getenv("OCI_REGION") or "").strip()
 
-    if cfg is not None:
+    if strategy == "RESOURCE_PRINCIPAL":
+        return _build_resource_principal_client(env_region)
+
+    profile_name = _resolve_profile_name(config_profile)
+
+    try:
+        cfg = oci.config.from_file(profile_name=profile_name)
         if env_region:
             cfg["region"] = env_region
         return UsageapiClient(cfg, timeout=60.0), cfg
+    except (
+        Exception
+    ) as exc:  # pragma: no cover  # pylint: disable=broad-exception-caught
+        if strategy == "API_KEY":
+            raise RuntimeError(
+                f"Could not load OCI profile '{profile_name}' for API_KEY auth: {exc}"
+            ) from exc
 
-    logger.info("Using RESOURCE_PRINCIPAL authentication")
-    signer = oci.auth.signers.get_resource_principals_signer()
-    cfg = {"region": env_region or signer.region, "tenancy": signer.tenancy_id}
-    return UsageapiClient(cfg, signer=signer, timeout=60.0), cfg
+        logger.warning(
+            "Could not load OCI profile '%s', falling back to resource principals: %s",
+            profile_name,
+            exc,
+        )
+        return _build_resource_principal_client(env_region)
 
 
 def make_identity_client(cfg: Dict[str, Any], tenancy_id: str) -> IdentityClient:

@@ -86,7 +86,8 @@ Returns compartment-level rows filtered by a target service, with robust fallbac
 - `query_type`: preferred `"COST"`/`"USAGE"`
 - `include_subcompartments`: whether subtree is included
 - `max_compartment_depth`: max depth (1..7)
-- `config_profile`: OCI config profile (default `"DEFAULT"`; `None` for RP auth)
+- `config_profile`: OCI config profile (default `"DEFAULT"`)
+- `auth_type`: auth strategy (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`)
 - `debug`: include diagnostics when `True`
 
 ### Output Shape (high level)
@@ -124,7 +125,8 @@ Returns an aggregated service-level summary **within a specific compartment scop
 - `query_type`: `"COST"` or `"USAGE"`
 - `include_subcompartments`: include subtree
 - `max_compartment_depth`: max depth (1..7)
-- `config_profile`: OCI profile or `None` for RP auth
+- `config_profile`: OCI config profile (default `"DEFAULT"`)
+- `auth_type`: auth strategy (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`)
 
 ### Output Shape (high level)
 - `period`

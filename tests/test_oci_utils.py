@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-21
+Date last modified: 2026-04-22
 License: MIT
 Description: Unit tests for reusable OCI utility helpers.
 """
@@ -162,6 +162,77 @@ def test_make_oci_client_rp_region_overridden_by_env(
 
     assert cfg == {"region": "eu-frankfurt-1", "tenancy": "ocid1.tenancy.oc1..rp"}
     assert captured["cfg"]["region"] == "eu-frankfurt-1"
+
+
+def test_make_oci_client_api_key_uses_default_profile_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_from_file(profile_name: str):
+        captured["profile_name"] = profile_name
+        return {"tenancy": "ocid1.tenancy.oc1..aaa", "region": "eu-milan-1"}
+
+    class FakeUsageClient:
+        def __init__(self, cfg, timeout=None, signer=None):
+            captured["cfg"] = cfg
+            captured["timeout"] = timeout
+            captured["signer"] = signer
+
+    monkeypatch.delenv("OCI_CONFIG_PROFILE", raising=False)
+    monkeypatch.setattr(oci_utils.oci.config, "from_file", fake_from_file)
+    monkeypatch.setattr(oci_utils, "UsageapiClient", FakeUsageClient)
+
+    _client, cfg = oci_utils.make_oci_client(None, auth_type="API_KEY")
+
+    assert captured["profile_name"] == "DEFAULT"
+    assert captured["signer"] is None
+    assert cfg["tenancy"] == "ocid1.tenancy.oc1..aaa"
+
+
+def test_make_oci_client_api_key_raises_without_rp_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        oci_utils.oci.config,
+        "from_file",
+        lambda profile_name: (_ for _ in ()).throw(RuntimeError("missing profile")),
+    )
+
+    with pytest.raises(RuntimeError, match="Could not load OCI profile"):
+        oci_utils.make_oci_client("DEFAULT", auth_type="API_KEY")
+
+
+def test_make_oci_client_resource_principal_forced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    class FakeSigner:
+        region = "us-ashburn-1"
+        tenancy_id = "ocid1.tenancy.oc1..rp"
+
+    class FakeUsageClient:
+        def __init__(self, cfg, timeout=None, signer=None):
+            captured["cfg"] = cfg
+            captured["timeout"] = timeout
+            captured["signer"] = signer
+
+    def fail_if_called(_profile_name: str):
+        raise AssertionError("from_file should not be called for forced RP auth")
+
+    monkeypatch.setattr(oci_utils.oci.config, "from_file", fail_if_called)
+    monkeypatch.setattr(oci_utils, "UsageapiClient", FakeUsageClient)
+    monkeypatch.setattr(
+        oci_utils.oci.auth.signers,
+        "get_resource_principals_signer",
+        lambda: FakeSigner(),
+    )
+
+    _client, cfg = oci_utils.make_oci_client("DEFAULT", auth_type="RESOURCE_PRINCIPAL")
+
+    assert cfg == {"region": "us-ashburn-1", "tenancy": "ocid1.tenancy.oc1..rp"}
+    assert isinstance(captured["signer"], FakeSigner)
 
 
 def test_make_identity_client_with_user_config(monkeypatch: pytest.MonkeyPatch) -> None:

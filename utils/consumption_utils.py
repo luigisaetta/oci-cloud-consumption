@@ -1,8 +1,9 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-21
+Date last modified: 2026-04-22
 License: MIT
-Description: OCI consumption analysis utilities exposing public functions for agents and MCP servers.
+Description: OCI consumption analysis utilities exposing public functions for
+agents and MCP servers.
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -366,6 +367,7 @@ def _build_debug_payload(
     include_subcompartments: bool,
     max_compartment_depth: int,
     config_profile: Optional[str],
+    auth_type: Optional[str],
     debug: bool,
 ) -> Dict[str, Any]:
     """Build result payload and optionally include debug diagnostics.
@@ -384,6 +386,7 @@ def _build_debug_payload(
         include_subcompartments: Caller preference for sub-compartments.
         max_compartment_depth: Caller maximum requested depth.
         config_profile: OCI auth profile used by caller.
+        auth_type: Requested auth strategy (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`).
         debug: Flag indicating whether diagnostics should be included.
 
     Returns:
@@ -407,6 +410,7 @@ def _build_debug_payload(
                 "include_subcompartments": include_subcompartments,
                 "max_compartment_depth": max_compartment_depth,
                 "config_profile": config_profile,
+                "auth_type": auth_type,
             },
         }
     )
@@ -423,6 +427,8 @@ def get_usage_summary_by_service(
     start_day: date | datetime | str,
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",
+    config_profile: Optional[str] = "DEFAULT",
+    auth_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return tenant-wide usage summary grouped by OCI service.
 
@@ -430,6 +436,8 @@ def get_usage_summary_by_service(
         start_day: Start day (inclusive), ISO string/date/datetime.
         end_day_inclusive: End day (inclusive), ISO string/date/datetime.
         query_type: Query type (`COST` or `USAGE`).
+        config_profile: OCI profile name when using API-key auth.
+        auth_type: Auth strategy (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`).
 
     Returns:
         Structured summary with service-level items, totals, and metadata.
@@ -437,7 +445,7 @@ def get_usage_summary_by_service(
     qt = _normalize_query_type(query_type)
     start, end_exclusive = _window_start_end_exclusive(start_day, end_day_inclusive)
 
-    usage_client, config = make_oci_client("DEFAULT")
+    usage_client, config = make_oci_client(config_profile, auth_type=auth_type)
     details = RequestSummarizedUsagesDetails(
         tenant_id=config["tenancy"],
         time_usage_started=start,
@@ -463,6 +471,8 @@ def get_usage_summary_by_compartment(
     start_day: date | datetime | str,
     end_day_inclusive: date | datetime | str,
     query_type: str = "COST",
+    config_profile: Optional[str] = "DEFAULT",
+    auth_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return tenant-wide usage summary grouped by compartment name.
 
@@ -470,6 +480,8 @@ def get_usage_summary_by_compartment(
         start_day: Start day (inclusive), ISO string/date/datetime.
         end_day_inclusive: End day (inclusive), ISO string/date/datetime.
         query_type: Query type (`COST` or `USAGE`).
+        config_profile: OCI profile name when using API-key auth.
+        auth_type: Auth strategy (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`).
 
     Returns:
         Structured summary with compartment-level items, totals, and metadata.
@@ -477,7 +489,7 @@ def get_usage_summary_by_compartment(
     qt = _normalize_query_type(query_type)
     start, end_exclusive = _window_start_end_exclusive(start_day, end_day_inclusive)
 
-    usage_client, config = make_oci_client("DEFAULT")
+    usage_client, config = make_oci_client(config_profile, auth_type=auth_type)
     details = RequestSummarizedUsagesDetails(
         tenant_id=config["tenancy"],
         time_usage_started=start,
@@ -509,6 +521,7 @@ def fetch_consumption_by_compartment(
     include_subcompartments: bool = True,
     max_compartment_depth: int = 7,
     config_profile: Optional[str] = "DEFAULT",
+    auth_type: Optional[str] = None,
     debug: bool = False,
 ) -> Dict[str, Any]:
     """Fetch compartment-level rows filtered by service.
@@ -520,7 +533,8 @@ def fetch_consumption_by_compartment(
         query_type: Preferred query type (`COST` or `USAGE`).
         include_subcompartments: Whether sub-compartments are included.
         max_compartment_depth: Maximum traversal depth in range 1..7.
-        config_profile: OCI profile name; `None` forces resource-principal auth.
+        config_profile: OCI profile name when using API-key auth.
+        auth_type: Auth strategy (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`).
         debug: When true, include diagnostic metadata in output.
 
     Returns:
@@ -539,7 +553,7 @@ def fetch_consumption_by_compartment(
             f"max_compartment_depth must be between 1 and {MAX_COMPARTMENT_DEPTH}"
         )
 
-    client, cfg = make_oci_client(config_profile)
+    client, cfg = make_oci_client(config_profile, auth_type=auth_type)
     tenant_id = cfg.get("tenancy")
     if not tenant_id:
         raise RuntimeError("Cannot determine tenancy OCID (check auth).")
@@ -583,6 +597,7 @@ def fetch_consumption_by_compartment(
                 include_subcompartments=include_subcompartments,
                 max_compartment_depth=max_compartment_depth,
                 config_profile=config_profile,
+                auth_type=auth_type,
                 debug=debug,
             )
 
@@ -614,6 +629,7 @@ def fetch_consumption_by_compartment(
                 include_subcompartments=include_subcompartments,
                 max_compartment_depth=max_compartment_depth,
                 config_profile=config_profile,
+                auth_type=auth_type,
                 debug=debug,
             )
 
@@ -637,6 +653,7 @@ def fetch_consumption_by_compartment(
             include_subcompartments=include_subcompartments,
             max_compartment_depth=max_compartment_depth,
             config_profile=config_profile,
+            auth_type=auth_type,
             debug=debug,
         )
 
@@ -661,6 +678,7 @@ def fetch_consumption_by_compartment(
         include_subcompartments=include_subcompartments,
         max_compartment_depth=max_compartment_depth,
         config_profile=config_profile,
+        auth_type=auth_type,
         debug=debug,
     )
 
@@ -674,6 +692,7 @@ def usage_summary_by_service_for_compartment(
     include_subcompartments: bool = True,
     max_compartment_depth: int = 7,
     config_profile: Optional[str] = "DEFAULT",
+    auth_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return service-level summary for a specific compartment.
 
@@ -684,7 +703,8 @@ def usage_summary_by_service_for_compartment(
         query_type: Query type (`COST` or `USAGE`).
         include_subcompartments: Whether sub-compartments are included.
         max_compartment_depth: Maximum traversal depth in range 1..7.
-        config_profile: OCI profile name; `None` forces resource-principal auth.
+        config_profile: OCI profile name when using API-key auth.
+        auth_type: Auth strategy (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`).
 
     Returns:
         Structured summary with service rows, totals, scope, and metadata.
@@ -704,7 +724,7 @@ def usage_summary_by_service_for_compartment(
     start, end_exclusive = _window_start_end_exclusive(start_day, end_day_inclusive)
     depth = _effective_depth(include_subcompartments, int(max_compartment_depth))
 
-    usage_client, cfg = make_oci_client(config_profile)
+    usage_client, cfg = make_oci_client(config_profile, auth_type=auth_type)
     tenancy_id = cfg.get("tenancy")
     if not tenancy_id:
         raise RuntimeError("Cannot determine tenancy OCID (check auth).")
