@@ -5,9 +5,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const DEFAULT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL || "http://127.0.0.1:8100";
+const DEFAULT_STREAM_URL = `${DEFAULT_API_URL}/agent/invoke/stream`;
 
 export default function HomePage() {
-  const [agentUrl, setAgentUrl] = useState(DEFAULT_API_URL);
+  const [agentUrl, setAgentUrl] = useState(DEFAULT_STREAM_URL);
   const [message, setMessage] = useState("Show me OCI consumption by service for the last 7 days.");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -17,21 +18,19 @@ export default function HomePage() {
   const [mcpStatuses, setMcpStatuses] = useState([]);
   const messageListRef = useRef(null);
 
-  const normalizedAgentUrl = useMemo(() => {
+  const streamInvokeUrl = useMemo(() => {
     const trimmed = agentUrl.trim();
     if (!trimmed) {
-      return DEFAULT_API_URL;
+      return DEFAULT_STREAM_URL;
     }
     return trimmed.replace(/\/+$/, "");
   }, [agentUrl]);
-  const streamInvokeUrl = useMemo(
-    () => `${normalizedAgentUrl}/agent/invoke/stream`,
-    [normalizedAgentUrl]
-  );
-  const mcpServerConfigUrl = useMemo(
-    () => `${normalizedAgentUrl}/agent/mcp-servers`,
-    [normalizedAgentUrl]
-  );
+  const mcpServerConfigUrl = useMemo(() => {
+    if (streamInvokeUrl.endsWith("/agent/invoke/stream")) {
+      return `${streamInvokeUrl.slice(0, -"/agent/invoke/stream".length)}/agent/mcp-servers`;
+    }
+    return `${DEFAULT_API_URL}/agent/mcp-servers`;
+  }, [streamInvokeUrl]);
   const displayedMcpServers = useMemo(
     () =>
       meta?.mcp_server_statuses?.length
@@ -232,10 +231,8 @@ export default function HomePage() {
             type="text"
             value={agentUrl}
             onChange={(event) => setAgentUrl(event.target.value)}
-            placeholder="http://127.0.0.1:8100"
+            placeholder="http://127.0.0.1:8100/agent/invoke/stream"
           />
-          <p className="label">Stream Endpoint</p>
-          <code className="endpoint">{streamInvokeUrl}</code>
         </div>
 
         <div className="metaCard">
@@ -255,9 +252,6 @@ export default function HomePage() {
 
         <div className="metaCard">
           <h2>Metadata</h2>
-          <p>
-            <strong>Servers:</strong> {meta?.mcp_servers?.join(", ") || "-"}
-          </p>
           <p>
             <strong>Tools loaded:</strong> {meta?.tool_count ?? "-"}
           </p>
