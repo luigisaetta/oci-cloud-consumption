@@ -50,6 +50,7 @@ All implementation decisions must remain aligned with that specification unless 
 
 ## Quickstart
 - [QUICKSTART.md](./QUICKSTART.md)
+- [Agent Guide](./agent/README.md)
 
 ## Run Services
 
