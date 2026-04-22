@@ -8,9 +8,16 @@ by compartment and service.
 
 import argparse
 import calendar
+import sys
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# Ensure project root is importable when the script is executed directly.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from utils.consumption_utils import (
     get_usage_summary_by_compartment,
