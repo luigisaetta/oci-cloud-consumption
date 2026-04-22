@@ -101,6 +101,7 @@ def test_make_oci_client_fallback_to_resource_principal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
+    monkeypatch.delenv("OCI_AUTH_TYPE", raising=False)
 
     def fake_from_file(profile_name: str):
         raise RuntimeError("profile not found")
@@ -123,7 +124,7 @@ def test_make_oci_client_fallback_to_resource_principal(
         lambda: FakeSigner(),
     )
 
-    client, cfg = oci_utils.make_oci_client("DEFAULT")
+    client, cfg = oci_utils.make_oci_client("DEFAULT", auth_type="AUTO")
 
     assert isinstance(client, FakeUsageClient)
     assert cfg == {"region": "eu-frankfurt-1", "tenancy": "ocid1.tenancy.oc1..rp"}
@@ -135,6 +136,7 @@ def test_make_oci_client_rp_region_overridden_by_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
+    monkeypatch.delenv("OCI_AUTH_TYPE", raising=False)
 
     def fake_from_file(profile_name: str):
         raise RuntimeError("profile not found")
@@ -158,7 +160,7 @@ def test_make_oci_client_rp_region_overridden_by_env(
     )
     monkeypatch.setenv("OCI_REGION", "eu-frankfurt-1")
 
-    _client, cfg = oci_utils.make_oci_client("DEFAULT")
+    _client, cfg = oci_utils.make_oci_client("DEFAULT", auth_type="AUTO")
 
     assert cfg == {"region": "eu-frankfurt-1", "tenancy": "ocid1.tenancy.oc1..rp"}
     assert captured["cfg"]["region"] == "eu-frankfurt-1"
@@ -207,6 +209,8 @@ def test_make_oci_client_resource_principal_forced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
+    monkeypatch.delenv("OCI_AUTH_TYPE", raising=False)
+    monkeypatch.delenv("OCI_REGION", raising=False)
 
     class FakeSigner:
         region = "us-ashburn-1"
