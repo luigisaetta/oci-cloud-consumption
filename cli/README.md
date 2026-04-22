@@ -8,6 +8,7 @@ The interface is built with `rich` for a more visual terminal experience.
 - Text menu with user-friendly options:
   - `[1] Monthly report`
   - `[2] Range report`
+  - `[3] Trend report (last 6 full months)`
 - Guided prompts (wizard-style) for required inputs.
 - Run preview table before execution.
 - Confirmation prompt before launching the batch job.
@@ -57,6 +58,22 @@ Prompts:
 Output:
 - one markdown file containing one monthly section per month in the selected range.
 
+### 3) Trend report
+
+Prompts:
+- reference month (`YYYY-MM` or `MM-YYYY`), default: current month
+- query type (`COST` or `USAGE`)
+- top N rows
+- OCI profile
+- auth type (optional)
+- output file path
+
+Output:
+- one markdown file with analysis on the 6 full months preceding the reference month:
+  - top N compartments
+  - top N services
+  - trend classification and growth percentage (LLM-based, with deterministic fallback)
+
 ## Defaults
 
 - Query type: `COST`
@@ -66,6 +83,7 @@ Output:
 - Canonical output names:
   - Monthly: `monthly-report-YYYY-MM.md`
   - Range: `range-report-YYYY-MM_to_YYYY-MM.md`
+  - Trend: `trend-report-last6-until-YYYY-MM.md`
 
 ## Notes
 

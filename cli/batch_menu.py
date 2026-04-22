@@ -27,6 +27,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from agent.batch_report_agent import (  # pylint: disable=wrong-import-position
     BatchConsumptionReportAgent,
 )
+from agent.batch_trend_report_agent import (  # pylint: disable=wrong-import-position
+    BatchTrendReportAgent,
+)
 
 OUTPUT_DIR = Path("reports")
 console = Console()
@@ -109,6 +112,11 @@ def _default_range_filename(start_month: str, end_month: str) -> str:
     return f"range-report-{start_month}_to_{end_month}.md"
 
 
+def _default_trend_filename(reference_month: str) -> str:
+    """Build canonical default filename for trend reports."""
+    return f"trend-report-last6-until-{reference_month}.md"
+
+
 def _render_header() -> None:
     """Render top header panel."""
     title = Text("OCI Cloud Consumption - Batch Menu", style="bold cyan")
@@ -130,6 +138,11 @@ def _render_main_menu() -> None:
         "2",
         "Range report",
         "Generate one markdown report containing all months in a range",
+    )
+    table.add_row(
+        "3",
+        "Trend report",
+        "Analyze previous 6 full months on top compartments and services",
     )
     table.add_row("0", "Exit", "Quit the menu")
     console.print(table)
@@ -288,16 +301,68 @@ def _run_range(agent: BatchConsumptionReportAgent) -> None:
     console.print("")
 
 
+def _run_trend(agent: BatchTrendReportAgent) -> None:
+    """Run six-month trend report flow."""
+    console.print("\n[bold]Trend report wizard[/bold]")
+    default_reference = datetime.now().strftime("%Y-%m")
+    reference_month = _normalize_month(
+        Prompt.ask(
+            "Reference month (YYYY-MM or MM-YYYY)",
+            default=default_reference,
+        )
+    )
+    options = _collect_common_options()
+    default_name = _default_trend_filename(reference_month)
+    output_path = Path(
+        Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
+    )
+
+    _preview_plan(
+        [
+            ("Job", "Trend report"),
+            ("Reference month", reference_month),
+            ("Analysis window", "Previous 6 full months"),
+            ("Query type", options.query_type),
+            ("Top N", str(options.top_n)),
+            ("Profile", options.profile),
+            ("Auth type", options.auth_type or "<auto>"),
+            ("Output", str(output_path)),
+        ]
+    )
+    if not Confirm.ask("Run this job now?", default=True):
+        console.print("[yellow]Cancelled.[/yellow]\n")
+        return
+
+    with console.status("[bold green]Running trend report...[/bold green]"):
+        markdown = agent.generate_report(
+            reference_month=reference_month,
+            query_type=options.query_type,
+            top_n=options.top_n,
+            config_profile=options.profile,
+            auth_type=options.auth_type,
+        )
+        _save_report(markdown, output_path)
+
+    console.print(f"\n[bold green]Trend report generated:[/bold green] {output_path}\n")
+    _show_saved_file_preview(output_path)
+    console.print("")
+
+
 def main() -> int:
     """Entry point for batch interactive menu."""
     agent = BatchConsumptionReportAgent()
+    trend_agent = BatchTrendReportAgent()
 
     while True:
         try:
             console.clear()
             _render_header()
             _render_main_menu()
-            choice = Prompt.ask("Select option", choices=["0", "1", "2"], default="1")
+            choice = Prompt.ask(
+                "Select option",
+                choices=["0", "1", "2", "3"],
+                default="1",
+            )
             if choice == "0":
                 console.print("\n[bold]Goodbye.[/bold]")
                 return 0
@@ -305,6 +370,8 @@ def main() -> int:
                 _run_monthly(agent)
             elif choice == "2":
                 _run_range(agent)
+            elif choice == "3":
+                _run_trend(trend_agent)
             Prompt.ask("Press Enter to continue", default="")
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted by user.[/yellow]")

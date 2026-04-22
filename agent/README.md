@@ -59,6 +59,36 @@ Optional arguments:
 python agent/batch_report_agent.py 2026-03 > report_2026-03.md
 ```
 
+---
+
+## 3) `batch_trend_report_agent.py`
+
+### What it does
+- Runs in batch mode from command line.
+- Uses the previous 6 full months before a reference month.
+- Selects top N compartments and top N services over the full 6-month window.
+- Uses configured OCI LLM to classify trend and estimate growth percentage.
+- Includes deterministic fallback trend logic if LLM output is invalid.
+
+### Typical usage
+```bash
+python agent/batch_trend_report_agent.py --reference-month 2026-04 --top-n 10
+```
+
+Optional arguments:
+- `--reference-month YYYY-MM|MM-YYYY` (default: current month)
+- `--query-type COST|USAGE`
+- `--top-n <int>`
+- `--profile <OCI_PROFILE>`
+- `--auth-type AUTO|API_KEY|RESOURCE_PRINCIPAL`
+
+### What it produces
+- Markdown trend report printed to stdout.
+- Can be redirected to a file:
+```bash
+python agent/batch_trend_report_agent.py --reference-month 2026-04 > trend_2026-04.md
+```
+
 ## Where to document agents?
 
 Best practice for this project:
