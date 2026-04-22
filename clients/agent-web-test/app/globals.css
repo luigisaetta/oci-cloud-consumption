@@ -10,6 +10,34 @@
   --error-bg: #ffe7e7;
   --error-text: #9f1239;
   --border: rgba(180, 196, 220, 0.65);
+  --panel-glass: rgba(255, 255, 255, 0.56);
+  --input-bg: rgba(255, 255, 255, 0.85);
+  --code-bg: #eaf0fb;
+  --pre-bg: #f4f8ff;
+  --user-pre-bg: #e9f2ff;
+  --secondary-bg: #eef2f8;
+  --secondary-text: #334155;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b1220;
+  --card: rgba(15, 23, 42, 0.75);
+  --text: #e5ecf6;
+  --muted: #9db1cc;
+  --primary: #3b82f6;
+  --user-bg: #1e3a8a;
+  --user-text: #eaf1ff;
+  --assistant-bg: rgba(15, 26, 47, 0.85);
+  --error-bg: rgba(153, 27, 27, 0.2);
+  --error-text: #fecaca;
+  --border: rgba(79, 107, 150, 0.5);
+  --panel-glass: rgba(16, 27, 45, 0.72);
+  --input-bg: rgba(8, 16, 30, 0.92);
+  --code-bg: #13263f;
+  --pre-bg: #0f1e33;
+  --user-pre-bg: #17366f;
+  --secondary-bg: #1f2e45;
+  --secondary-text: #d5e2f5;
 }
 
 * {
@@ -25,6 +53,14 @@ body {
     radial-gradient(circle at 60% 96%, rgba(199, 209, 255, 0.25), transparent 35%),
     linear-gradient(160deg, #eef4ff 0%, #edf3fb 45%, #e8eef7 100%);
   color: var(--text);
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 8% 8%, rgba(37, 99, 235, 0.16), transparent 38%),
+    radial-gradient(circle at 92% 12%, rgba(14, 116, 144, 0.14), transparent 35%),
+    radial-gradient(circle at 60% 96%, rgba(30, 64, 175, 0.16), transparent 35%),
+    linear-gradient(165deg, #060c18 0%, #0b1427 42%, #0f1d35 100%);
 }
 
 .chatLayout {
@@ -80,7 +116,7 @@ h1 {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.8rem;
-  background: rgba(255, 255, 255, 0.56);
+  background: var(--panel-glass);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
@@ -107,7 +143,22 @@ h1 {
   padding: 0.55rem 0.65rem;
   margin-bottom: 0.55rem;
   font-size: 0.88rem;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.toggleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.toggleRow input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
 }
 
 .serverList {
@@ -232,11 +283,11 @@ h1 {
 .userBubble {
   background: var(--user-bg);
   color: var(--user-text);
-  border-color: #bfd3fb;
+  border-color: var(--border);
 }
 
 .userBubble .messageRole {
-  color: #1e3a8a;
+  color: #bfdbfe;
 }
 
 .assistantBubble {
@@ -271,6 +322,8 @@ textarea {
   padding: 0.75rem;
   font-size: 0.95rem;
   min-height: 76px;
+  background: var(--input-bg);
+  color: var(--text);
 }
 
 button {
@@ -291,8 +344,8 @@ button {
 }
 
 .secondaryButton {
-  background: #eef2f8;
-  color: #334155;
+  background: var(--secondary-bg);
+  color: var(--secondary-text);
   border: 1px solid var(--border);
 }
 
@@ -343,8 +396,8 @@ button:disabled {
 }
 
 .bubble code {
-  background: #eaf0fb;
-  color: #0f172a;
+  background: var(--code-bg);
+  color: var(--text);
   border-radius: 6px;
   padding: 0.1rem 0.35rem;
   font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -352,8 +405,8 @@ button:disabled {
 }
 
 .userBubble code {
-  background: #bfdbfe;
-  color: #0f172a;
+  background: color-mix(in srgb, var(--user-bg) 70%, #ffffff 30%);
+  color: var(--user-text);
 }
 
 .bubble pre {
@@ -363,12 +416,12 @@ button:disabled {
   border-radius: 10px;
   padding: 0.7rem;
   border: 1px solid var(--border);
-  background: #f4f8ff;
+  background: var(--pre-bg);
 }
 
 .userBubble pre {
-  background: #e9f2ff;
-  border-color: #bfd3fb;
+  background: var(--user-pre-bg);
+  border-color: var(--border);
 }
 
 .bubble pre code {

@@ -9,6 +9,7 @@ const DEFAULT_STREAM_URL = `${DEFAULT_API_URL}/agent/invoke/stream`;
 
 export default function HomePage() {
   const [agentUrl, setAgentUrl] = useState(DEFAULT_STREAM_URL);
+  const [darkMode, setDarkMode] = useState(false);
   const [message, setMessage] = useState("Show me OCI consumption by service for the last 7 days.");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -72,6 +73,18 @@ export default function HomePage() {
     }
     messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
   }, [conversation, streamingAnswer, loading]);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("ui-theme");
+    if (savedTheme === "dark") {
+      setDarkMode(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+    window.localStorage.setItem("ui-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +246,19 @@ export default function HomePage() {
             onChange={(event) => setAgentUrl(event.target.value)}
             placeholder="http://127.0.0.1:8100/agent/invoke/stream"
           />
+        </div>
+
+        <div className="metaCard">
+          <h2>Appearance</h2>
+          <label className="toggleRow" htmlFor="dark-mode-toggle">
+            <span>Dark mode</span>
+            <input
+              id="dark-mode-toggle"
+              type="checkbox"
+              checked={darkMode}
+              onChange={(event) => setDarkMode(event.target.checked)}
+            />
+          </label>
         </div>
 
         <div className="metaCard">
