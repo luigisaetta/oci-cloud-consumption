@@ -52,6 +52,6 @@ def test_generate_report_builds_top_sections(monkeypatch: pytest.MonkeyPatch) ->
 
     assert "Top 10 Compartments" in report
     assert "Top 10 Services" in report
-    assert "Totale su tutti: **100.00**" in report
+    assert "Overall total: **100.00**" in report
     assert "| 1 | Finance | 70.00 | 70.00% | 100.00 |" in report
     assert "| 1 | Compute | 80.00 | 80.00% | 100.00 |" in report

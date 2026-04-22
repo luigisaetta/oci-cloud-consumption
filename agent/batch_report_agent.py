@@ -122,7 +122,7 @@ def _render_section(
     """Render one markdown table section."""
     lines = [f"## {title}", ""]
     lines.append(
-        f"| # | {label_header} | Totale Mese | % sul Totale | Totale Overall |"
+        f"| # | {label_header} | Monthly Total | % of Overall Total | Overall Total |"
     )
     lines.append("|---:|---|---:|---:|---:|")
     if not entries:
@@ -191,7 +191,7 @@ class BatchConsumptionReportAgent:  # pylint: disable=too-few-public-methods,too
         report_lines.append("")
         report_lines.append(f"- Query type: `{query_type}`")
         report_lines.append(f"- Time window: `{start_day}` to `{end_day}` (inclusive)")
-        report_lines.append(f"- Totale su tutti: **{overall_total:.2f}**")
+        report_lines.append(f"- Overall total: **{overall_total:.2f}**")
         report_lines.append("")
         report_lines.extend(
             _render_section(
