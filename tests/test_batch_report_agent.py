@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-22
+Date last modified: 2026-04-23
 License: MIT
 Description: Unit tests for monthly batch report agent.
 """
@@ -55,3 +55,30 @@ def test_generate_report_builds_top_sections(monkeypatch: pytest.MonkeyPatch) ->
     assert "Overall total: **100.00**" in report
     assert "| 1 | Finance | 70.00 | 70.00% |" in report
     assert "| 1 | Compute | 80.00 | 80.00% |" in report
+
+
+def test_generate_report_uses_requested_top_n_in_titles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        batch_report_agent,
+        "get_usage_summary_by_compartment",
+        lambda **_kwargs: {
+            "items": [{"compartmentName": "Finance", "amount": 100.0}],
+            "totals": {"amount": 100.0},
+        },
+    )
+    monkeypatch.setattr(
+        batch_report_agent,
+        "get_usage_summary_by_service",
+        lambda **_kwargs: {
+            "items": [{"service": "Compute", "amount": 100.0}],
+            "totals": {"amount": 100.0},
+        },
+    )
+
+    agent = batch_report_agent.BatchConsumptionReportAgent()
+    report = agent.generate_report("2026-04", top_n=1)
+
+    assert "Top 1 Compartments" in report
+    assert "Top 1 Services" in report

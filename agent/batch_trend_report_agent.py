@@ -9,7 +9,6 @@ and services, with LLM-based trend interpretation.
 from __future__ import annotations
 
 import argparse
-import calendar
 import json
 import re
 import sys
@@ -39,6 +38,12 @@ from utils import (  # pylint: disable=wrong-import-position
 from utils.oci_model import (  # pylint: disable=wrong-import-position
     create_chat_oci_genai,
 )
+from common.month_utils import (  # pylint: disable=wrong-import-position
+    format_month as _format_month,
+    month_window as _month_window,
+    parse_month_year as _parse_month_year,
+    previous_full_months as _previous_full_months,
+)
 
 logger = get_console_logger(name="BatchTrendReportAgent")
 
@@ -60,63 +65,6 @@ class TrendInsight:
     is_growing: bool
     growth_pct: Optional[float]
     reason: str
-
-
-def _parse_month_year(month_year: str) -> Tuple[int, int]:
-    """Parse month-year input supporting `YYYY-MM` or `MM-YYYY`."""
-    value = (month_year or "").strip()
-    if not value:
-        raise ValueError("month_year must be provided in format YYYY-MM or MM-YYYY.")
-
-    parts = value.split("-")
-    if len(parts) != 2:
-        raise ValueError("Invalid month_year format. Use YYYY-MM or MM-YYYY.")
-
-    first, second = parts[0], parts[1]
-    if len(first) == 4 and len(second) == 2:
-        year, month = int(first), int(second)
-    elif len(first) == 2 and len(second) == 4:
-        month, year = int(first), int(second)
-    else:
-        raise ValueError("Invalid month_year format. Use YYYY-MM or MM-YYYY.")
-
-    if year < 1900 or year > 3000:
-        raise ValueError("year must be between 1900 and 3000.")
-    if month < 1 or month > 12:
-        raise ValueError("month must be between 1 and 12.")
-
-    return year, month
-
-
-def _format_month(year: int, month: int) -> str:
-    """Return month in canonical format YYYY-MM."""
-    return f"{year:04d}-{month:02d}"
-
-
-def _month_window(month_year: str) -> Tuple[str, str]:
-    """Return month window as start/end inclusive ISO dates."""
-    year, month = _parse_month_year(month_year)
-    start = date(year, month, 1)
-    end = date(year, month, calendar.monthrange(year, month)[1])
-    return start.isoformat(), end.isoformat()
-
-
-def _shift_month(year: int, month: int, delta: int) -> Tuple[int, int]:
-    """Shift a year-month pair by delta months."""
-    index = year * 12 + (month - 1) + delta
-    out_year = index // 12
-    out_month = index % 12 + 1
-    return out_year, out_month
-
-
-def _previous_full_months(reference_month: str, count: int = 6) -> List[str]:
-    """Return the previous `count` full months before reference month."""
-    year, month = _parse_month_year(reference_month)
-    months: List[str] = []
-    for delta in range(-count, 0):
-        out_year, out_month = _shift_month(year, month, delta)
-        months.append(_format_month(out_year, out_month))
-    return months
 
 
 def _to_float(value: Any) -> float:

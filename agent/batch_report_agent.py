@@ -1,16 +1,14 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-22
+Date last modified: 2026-04-23
 License: MIT
 Description: Batch agent generating monthly OCI consumption top-10 reports
 by compartment and service.
 """
 
 import argparse
-import calendar
 import sys
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,6 +26,7 @@ from utils.consumption_utils import (
     get_usage_summary_by_compartment,
     get_usage_summary_by_service,
 )
+from common.month_utils import month_window, parse_month_year
 
 
 @dataclass
@@ -63,14 +62,6 @@ def _parse_month_year(month_year: str) -> Tuple[int, int]:
         raise ValueError("month must be between 1 and 12.")
 
     return year, month
-
-
-def _month_window(month_year: str) -> Tuple[str, str]:
-    """Return month window as start/end inclusive ISO dates."""
-    year, month = _parse_month_year(month_year)
-    start = date(year, month, 1)
-    end = date(year, month, calendar.monthrange(year, month)[1])
-    return start.isoformat(), end.isoformat()
 
 
 def _to_float(value: Any) -> float:
@@ -145,7 +136,7 @@ class BatchConsumptionReportAgent:  # pylint: disable=too-few-public-methods,too
         auth_type: Optional[str] = None,
     ) -> str:
         """Generate monthly report with top compartments and top services."""
-        start_day, end_day = _month_window(month_year)
+        start_day, end_day = month_window(month_year)
 
         by_compartment = get_usage_summary_by_compartment(
             start_day=start_day,
@@ -190,14 +181,14 @@ class BatchConsumptionReportAgent:  # pylint: disable=too-few-public-methods,too
         report_lines.append("")
         report_lines.extend(
             _render_section(
-                "Top 10 Compartments",
+                f"Top {top_n} Compartments",
                 "Compartment",
                 compartment_entries,
             )
         )
         report_lines.extend(
             _render_section(
-                "Top 10 Services",
+                f"Top {top_n} Services",
                 "Service",
                 service_entries,
             )

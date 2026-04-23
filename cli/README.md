@@ -38,7 +38,7 @@ Prompts:
 - query type (`COST` or `USAGE`)
 - top N rows
 - OCI profile
-- auth type (optional)
+- auth type (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`, or `NONE`)
 - output file path
 
 Output:
@@ -52,7 +52,7 @@ Prompts:
 - query type (`COST` or `USAGE`)
 - top N rows
 - OCI profile
-- auth type (optional)
+- auth type (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`, or `NONE`)
 - output file path
 
 Output:
@@ -65,7 +65,7 @@ Prompts:
 - query type (`COST` or `USAGE`)
 - top N rows
 - OCI profile
-- auth type (optional)
+- auth type (`AUTO`, `API_KEY`, `RESOURCE_PRINCIPAL`, or `NONE`)
 - output file path
 
 Output:

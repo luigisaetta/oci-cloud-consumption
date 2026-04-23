@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-22
+Date last modified: 2026-04-23
 License: MIT
 Description: Interactive rich CLI menu to run batch agents and save markdown reports.
 """
@@ -30,6 +30,10 @@ from agent.batch_report_agent import (  # pylint: disable=wrong-import-position
 from agent.batch_trend_report_agent import (  # pylint: disable=wrong-import-position
     BatchTrendReportAgent,
 )
+from common.month_utils import (  # pylint: disable=wrong-import-position
+    months_between as _months_between,
+    normalize_month as _normalize_month,
+)
 
 OUTPUT_DIR = Path("reports")
 console = Console()
@@ -45,55 +49,16 @@ class RunOptions:
     auth_type: Optional[str] = None
 
 
-def _parse_month(month_value: str) -> Tuple[int, int]:
-    """Parse a month string in format YYYY-MM or MM-YYYY."""
-    raw = (month_value or "").strip()
-    parts = raw.split("-")
-    if len(parts) != 2:
-        raise ValueError("Invalid month format. Use YYYY-MM or MM-YYYY.")
-
-    first, second = parts[0], parts[1]
-    if len(first) == 4 and len(second) == 2:
-        year, month = int(first), int(second)
-    elif len(first) == 2 and len(second) == 4:
-        year, month = int(second), int(first)
-    else:
-        raise ValueError("Invalid month format. Use YYYY-MM or MM-YYYY.")
-
-    if month < 1 or month > 12:
-        raise ValueError("Month must be between 1 and 12.")
-    return year, month
-
-
-def _format_month(year: int, month: int) -> str:
-    """Format month as YYYY-MM."""
-    return f"{year:04d}-{month:02d}"
-
-
-def _normalize_month(month_value: str) -> str:
-    """Normalize month input into YYYY-MM."""
-    year, month = _parse_month(month_value)
-    return _format_month(year, month)
-
-
-def _months_between(start_month: str, end_month: str) -> List[str]:
-    """Return inclusive list of months between two endpoints."""
-    start_year, start_num = _parse_month(start_month)
-    end_year, end_num = _parse_month(end_month)
-    start_key = start_year * 12 + start_num
-    end_key = end_year * 12 + end_num
-    if start_key > end_key:
-        raise ValueError("Start month must be <= end month.")
-
-    out: List[str] = []
-    current_year, current_month = start_year, start_num
-    while current_year * 12 + current_month <= end_key:
-        out.append(_format_month(current_year, current_month))
-        current_month += 1
-        if current_month > 12:
-            current_month = 1
-            current_year += 1
-    return out
+def _normalize_auth_type_choice(auth_type_choice: str) -> Optional[str]:
+    """Normalize and validate auth type selection from CLI input."""
+    normalized = (auth_type_choice or "").strip().upper()
+    if normalized in {"", "NONE"}:
+        return None
+    if normalized not in {"AUTO", "API_KEY", "RESOURCE_PRINCIPAL"}:
+        raise ValueError(
+            "Invalid auth type. Allowed values: AUTO, API_KEY, RESOURCE_PRINCIPAL, NONE."
+        )
+    return normalized
 
 
 def _save_report(markdown: str, output_path: Path) -> None:
@@ -157,11 +122,14 @@ def _collect_common_options() -> RunOptions:
         raise ValueError("Top N must be >= 1.")
 
     profile = Prompt.ask("OCI profile", default="DEFAULT")
-    auth_type_raw = Prompt.ask(
-        "Auth type (AUTO/API_KEY/RESOURCE_PRINCIPAL or empty)",
-        default="",
+    auth_type_choice = Prompt.ask(
+        "Auth type",
+        choices=["AUTO", "API_KEY", "RESOURCE_PRINCIPAL", "NONE"],
+        default="NONE",
+        show_choices=True,
+        case_sensitive=False,
     ).strip()
-    auth_type = auth_type_raw or None
+    auth_type = _normalize_auth_type_choice(auth_type_choice)
 
     return RunOptions(
         query_type=query_type,
