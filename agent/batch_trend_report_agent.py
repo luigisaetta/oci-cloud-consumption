@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-22
+Date last modified: 2026-04-23
 License: MIT
 Description: Batch agent generating six-month OCI trend reports on top compartments
 and services, with LLM-based trend interpretation.
@@ -32,9 +32,15 @@ from utils.consumption_utils import (  # pylint: disable=wrong-import-position
     get_usage_summary_by_compartment,
     get_usage_summary_by_service,
 )
-from utils.oci_model import (
+from utils import (  # pylint: disable=wrong-import-position
+    emit_structured_log,
+    get_console_logger,
+)
+from utils.oci_model import (  # pylint: disable=wrong-import-position
     create_chat_oci_genai,
-)  # pylint: disable=wrong-import-position
+)
+
+logger = get_console_logger(name="BatchTrendReportAgent")
 
 
 @dataclass
@@ -302,6 +308,24 @@ class BatchTrendReportAgent:  # pylint: disable=too-few-public-methods,too-many-
         """Initialize trend agent and LLM client."""
         self.llm = create_chat_oci_genai()
 
+    @staticmethod
+    def _log_agent_event(
+        *,
+        operation: str,
+        status: str,
+        error_details: str = "",
+        **extra: Any,
+    ) -> None:
+        """Emit structured logs for batch trend observability."""
+        emit_structured_log(
+            logger,
+            component="agent",
+            operation=operation,
+            status=status,
+            error_details=error_details,
+            **extra,
+        )
+
     def _analyze_with_llm(
         self,
         *,
@@ -338,9 +362,33 @@ class BatchTrendReportAgent:  # pylint: disable=too-few-public-methods,too-many-
             "- Keep reasons short (max 20 words).\n\n"
             f"Input:\n{json.dumps(payload, ensure_ascii=True)}"
         )
-        raw = self.llm.invoke(prompt)
+        try:
+            raw = self.llm.invoke(prompt)
+        except Exception as exc:  # pragma: no cover - runtime integration behavior
+            self._log_agent_event(
+                operation="llm_invoke",
+                status="failure",
+                error_details=str(exc),
+                months_count=len(months),
+                compartments_count=len(compartment_series),
+                services_count=len(service_series),
+            )
+            raise
+
+        self._log_agent_event(
+            operation="llm_invoke",
+            status="success",
+            months_count=len(months),
+            compartments_count=len(compartment_series),
+            services_count=len(service_series),
+        )
         parsed = _extract_json_object(_extract_text_from_model_output(raw))
         if not parsed:
+            self._log_agent_event(
+                operation="llm_parse",
+                status="failure",
+                error_details="invalid_or_empty_json_response",
+            )
             return {"compartments": {}, "services": {}}
 
         def normalize(section_name: str) -> Dict[str, TrendInsight]:
@@ -457,7 +505,8 @@ class BatchTrendReportAgent:  # pylint: disable=too-few-public-methods,too-many-
         report_lines.append("")
         report_lines.append(f"- Reference month (execution moment): `{reference}`")
         report_lines.append(
-            f"- Analyzed months: `{months[0]}` to `{months[-1]}` (6 full months before reference month)"
+            f"- Analyzed months: `{months[0]}` to `{months[-1]}` "
+            "(6 full months before reference month)"
         )
         report_lines.append(f"- Query type: `{query_type}`")
         report_lines.append(f"- Top N: `{top_n}`")

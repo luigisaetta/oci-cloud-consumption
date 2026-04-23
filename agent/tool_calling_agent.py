@@ -1,12 +1,11 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-22
+Date last modified: 2026-04-23
 License: MIT
 Description: LangChain tool-calling agent that consumes tools exposed by configured MCP servers.
 """
 
 import asyncio
-import json
 import os
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -15,7 +14,7 @@ from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from agent.mcp_config import load_mcp_server_connections, load_mcp_server_statuses
-from utils import get_console_logger
+from utils import emit_structured_log, get_console_logger
 from utils.oci_model import create_chat_oci_genai
 
 SYSTEM_PROMPT = (
@@ -431,13 +430,12 @@ class ConsumptionToolCallingAgent:
             **extra: Additional structured fields.
         """
         payload: Dict[str, Any] = {
-            "component": "agent",
             "operation": operation,
             "status": status,
             "error_details": error_details,
         }
         payload.update(extra)
-        logger.info("%s", json.dumps(payload, default=str, sort_keys=True))
+        emit_structured_log(logger, component="agent", **payload)
 
     async def _ainvoke_with_retry(
         self, agent_graph: Any, messages: List[Dict[str, str]]
@@ -457,13 +455,26 @@ class ConsumptionToolCallingAgent:
         last_error: Optional[Exception] = None
         for attempt in range(1, LLM_MAX_RETRIES + 1):
             try:
-                return await agent_graph.ainvoke(
+                result = await agent_graph.ainvoke(
                     {"messages": messages},
                     config={"recursion_limit": AGENT_RECURSION_LIMIT},
                 )
+                self._log_agent_event(
+                    operation="llm_invoke",
+                    status="success",
+                    attempt=attempt,
+                )
+                return result
             except Exception as exc:  # pragma: no cover - runtime integration behavior
                 last_error = exc
                 retryable = self._is_retryable_llm_error(exc)
+                self._log_agent_event(
+                    operation="llm_invoke",
+                    status="failure",
+                    error_details=str(exc),
+                    attempt=attempt,
+                    retryable=retryable,
+                )
                 has_attempts_left = attempt < LLM_MAX_RETRIES
                 if retryable and has_attempts_left:
                     wait_seconds = self._backoff_seconds(attempt)
