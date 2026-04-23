@@ -20,7 +20,11 @@ Edit `.env.local` if needed:
 
 ```env
 NEXT_PUBLIC_AGENT_API_URL=http://127.0.0.1:8100
+DEV_BASIC_AUTH_USER=dev_user
+DEV_BASIC_AUTH_PASS=dev_password_123
 ```
+
+When `DEV_BASIC_AUTH_USER` and `DEV_BASIC_AUTH_PASS` are set, the app is protected with HTTP Basic Auth via Next.js middleware.
 
 ## Run the Client
 
