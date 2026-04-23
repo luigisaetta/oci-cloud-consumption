@@ -8,6 +8,8 @@
 > **AI-driven operational control for OCI tenant consumption**  
 > `oci-cloud-consumption` is a focused platform for OCI tenant administrators who need clear visibility, proactive governance, and continuous control over cloud usage and cost.
 
+![OCI Cloud Consumption Concept](./images/cloud-consumption-concept.png)
+
 ---
 
 ## Why This Project
