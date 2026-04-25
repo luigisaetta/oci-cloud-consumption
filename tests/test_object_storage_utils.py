@@ -133,7 +133,7 @@ def test_constructor_builds_profile_client_with_default_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
-    monkeypatch.delenv("OCI_REGION", raising=False)
+    monkeypatch.setenv("OCI_REGION", "eu-frankfurt-1")
 
     class FakeSdkClient:
         def __init__(self, cfg, **kwargs):
@@ -153,7 +153,7 @@ def test_constructor_builds_profile_client_with_default_retry(
     storage = ObjectStorageUtils(config_profile="DEFAULT", auth_type="API_KEY")
 
     assert storage.namespace_name == "tenant_namespace"
-    assert captured["cfg"]["region"] == "eu-milan-1"
+    assert captured["cfg"]["region"] == "eu-frankfurt-1"
     assert captured["kwargs"]["timeout"] == 60.0
     assert (
         captured["kwargs"]["retry_strategy"]

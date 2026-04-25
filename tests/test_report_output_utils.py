@@ -15,7 +15,9 @@ import pytest
 from utils import report_output_utils
 
 
-def test_build_object_name_without_prefix() -> None:
+def test_build_object_name_without_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(report_output_utils.OBJECT_STORAGE_PREFIX_ENV, raising=False)
+
     assert report_output_utils.build_object_name("monthly.md") == "monthly.md"
 
 

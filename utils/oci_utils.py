@@ -1,18 +1,25 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-22
+Date last modified: 2026-04-25
 License: MIT
 Description: Reusable OCI helper functions for auth, identity, and response normalization.
 """
 
+# pylint: disable=broad-exception-caught
+
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import oci
+from dotenv import load_dotenv
 from oci.identity import IdentityClient
 from oci.usage_api import UsageapiClient
 
 from utils import get_console_logger
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
 
 logger = get_console_logger()
 
@@ -54,13 +61,66 @@ def _resolve_profile_name(config_profile: Optional[str]) -> str:
     return "DEFAULT"
 
 
-def _build_resource_principal_client(
-    env_region: str,
-) -> Tuple[UsageapiClient, Dict[str, Any]]:
+def _resolve_oci_region() -> str:
+    """Resolve OCI region exclusively from `.env`/environment configuration."""
+    env_region = (os.getenv("OCI_REGION") or "").strip()
+    if not env_region:
+        raise RuntimeError(
+            "OCI_REGION must be set in .env or the process environment. "
+            "The region is not read from the OCI profile."
+        )
+    return env_region
+
+
+def make_oci_config(
+    config_profile: Optional[str],
+    *,
+    auth_type: Optional[str] = None,
+) -> Tuple[Dict[str, Any], Optional[Any]]:
+    """Create shared OCI config and optional signer for SDK clients.
+
+    The OCI region is always taken from `OCI_REGION`, loaded from `.env` when
+    available. Profile files are used only for API key credentials and tenancy.
+    """
+    strategy = _normalize_auth_type(auth_type)
+    env_region = _resolve_oci_region()
+
+    if strategy == "RESOURCE_PRINCIPAL":
+        logger.info("Using RESOURCE_PRINCIPAL authentication")
+        signer = oci.auth.signers.get_resource_principals_signer()
+        cfg = {"region": env_region, "tenancy": signer.tenancy_id}
+        return cfg, signer
+
+    profile_name = _resolve_profile_name(config_profile)
+
+    try:
+        cfg = oci.config.from_file(profile_name=profile_name)
+        cfg["region"] = env_region
+        return cfg, None
+    except (
+        Exception
+    ) as exc:  # pragma: no cover  # pylint: disable=broad-exception-caught
+        if strategy == "API_KEY":
+            raise RuntimeError(
+                f"Could not load OCI profile '{profile_name}' for API_KEY auth: {exc}"
+            ) from exc
+
+        logger.warning(
+            "Could not load OCI profile '%s', falling back to resource principals: %s",
+            profile_name,
+            exc,
+        )
+        logger.info("Using RESOURCE_PRINCIPAL authentication")
+        signer = oci.auth.signers.get_resource_principals_signer()
+        cfg = {"region": env_region, "tenancy": signer.tenancy_id}
+        return cfg, signer
+
+
+def _build_resource_principal_client() -> Tuple[UsageapiClient, Dict[str, Any]]:
     """Create Usage API client with resource principal authentication."""
     logger.info("Using RESOURCE_PRINCIPAL authentication")
     signer = oci.auth.signers.get_resource_principals_signer()
-    cfg = {"region": env_region or signer.region, "tenancy": signer.tenancy_id}
+    cfg = {"region": _resolve_oci_region(), "tenancy": signer.tenancy_id}
     return UsageapiClient(cfg, signer=signer, timeout=60.0), cfg
 
 
@@ -80,33 +140,10 @@ def make_oci_client(
         Tuple `(UsageapiClient, config_dict)` where config contains at least
         `region` and `tenancy`.
     """
-    strategy = _normalize_auth_type(auth_type)
-    env_region = (os.getenv("OCI_REGION") or "").strip()
-
-    if strategy == "RESOURCE_PRINCIPAL":
-        return _build_resource_principal_client(env_region)
-
-    profile_name = _resolve_profile_name(config_profile)
-
-    try:
-        cfg = oci.config.from_file(profile_name=profile_name)
-        if env_region:
-            cfg["region"] = env_region
-        return UsageapiClient(cfg, timeout=60.0), cfg
-    except (
-        Exception
-    ) as exc:  # pragma: no cover  # pylint: disable=broad-exception-caught
-        if strategy == "API_KEY":
-            raise RuntimeError(
-                f"Could not load OCI profile '{profile_name}' for API_KEY auth: {exc}"
-            ) from exc
-
-        logger.warning(
-            "Could not load OCI profile '%s', falling back to resource principals: %s",
-            profile_name,
-            exc,
-        )
-        return _build_resource_principal_client(env_region)
+    cfg, signer = make_oci_config(config_profile, auth_type=auth_type)
+    if signer is not None:
+        return UsageapiClient(cfg, signer=signer, timeout=60.0), cfg
+    return UsageapiClient(cfg, timeout=60.0), cfg
 
 
 def make_identity_client(cfg: Dict[str, Any], tenancy_id: str) -> IdentityClient:

@@ -103,6 +103,8 @@ Accepted month formats:
 
 - OCI authentication follows the backend logic in `utils/oci_utils.py`:
   config profile first, then resource-principal fallback.
+- OCI region is always read from `OCI_REGION`; the region in the OCI profile is
+  ignored.
 - Batch Object Storage output uses `OCI_OBJECT_STORAGE_BUCKET_NAME` unless
   `--bucket-name` is passed, and can use `OCI_OBJECT_STORAGE_REPORT_PREFIX`.
 - Date parameters are expected in ISO format (`YYYY-MM-DD`).

@@ -114,6 +114,9 @@ Object Storage defaults:
 - bucket: `OCI_OBJECT_STORAGE_BUCKET_NAME`
 - object prefix: `OCI_OBJECT_STORAGE_REPORT_PREFIX`
 
+OCI region is always read from `OCI_REGION`; the region in the OCI profile is
+ignored.
+
 ## Where to document agents?
 
 Best practice for this project:

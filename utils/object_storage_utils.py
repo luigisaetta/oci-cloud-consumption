@@ -7,14 +7,13 @@ Description: Reusable helper class for reading and writing OCI Object Storage fi
 
 # pylint: disable=too-many-arguments,broad-exception-caught
 
-import os
 from typing import Any, Dict, List, Optional, Union
 
 import oci
 from oci.object_storage import ObjectStorageClient
 
 from utils import emit_structured_log, get_console_logger
-from utils.oci_utils import _normalize_auth_type, _resolve_profile_name
+from utils.oci_utils import make_oci_config
 
 logger = get_console_logger()
 
@@ -56,58 +55,14 @@ class ObjectStorageUtils:
         auth_type: Optional[str],
     ) -> tuple[ObjectStorageClient, Dict[str, Any]]:
         """Create an Object Storage client with OCI SDK retry support."""
-        strategy = _normalize_auth_type(auth_type)
-        env_region = (os.getenv("OCI_REGION") or "").strip()
-
-        if strategy == "RESOURCE_PRINCIPAL":
-            signer = oci.auth.signers.get_resource_principals_signer()
-            cfg = {"region": env_region or signer.region, "tenancy": signer.tenancy_id}
-            return (
-                ObjectStorageClient(
-                    cfg,
-                    signer=signer,
-                    timeout=60.0,
-                    retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY,
-                ),
-                cfg,
-            )
-
-        profile_name = _resolve_profile_name(config_profile)
-        try:
-            cfg = oci.config.from_file(profile_name=profile_name)
-            if env_region:
-                cfg["region"] = env_region
-            return (
-                ObjectStorageClient(
-                    cfg,
-                    timeout=60.0,
-                    retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY,
-                ),
-                cfg,
-            )
-        except Exception as exc:  # pragma: no cover
-            if strategy == "API_KEY":
-                raise RuntimeError(
-                    "Could not load OCI profile "
-                    f"'{profile_name}' for API_KEY auth: {exc}"
-                ) from exc
-
-            logger.warning(
-                "Could not load OCI profile '%s', falling back to resource principals: %s",
-                profile_name,
-                exc,
-            )
-            signer = oci.auth.signers.get_resource_principals_signer()
-            cfg = {"region": env_region or signer.region, "tenancy": signer.tenancy_id}
-            return (
-                ObjectStorageClient(
-                    cfg,
-                    signer=signer,
-                    timeout=60.0,
-                    retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY,
-                ),
-                cfg,
-            )
+        cfg, signer = make_oci_config(config_profile, auth_type=auth_type)
+        client_kwargs = {
+            "timeout": 60.0,
+            "retry_strategy": oci.retry.DEFAULT_RETRY_STRATEGY,
+        }
+        if signer is not None:
+            client_kwargs["signer"] = signer
+        return ObjectStorageClient(cfg, **client_kwargs), cfg
 
     @property
     def namespace_name(self) -> str:
