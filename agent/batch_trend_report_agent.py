@@ -1,10 +1,12 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-23
+Date last modified: 2026-04-25
 License: MIT
 Description: Batch agent generating six-month OCI trend reports on top compartments
 and services, with LLM-based trend interpretation.
 """
+
+# pylint: disable=too-many-locals
 
 from __future__ import annotations
 
@@ -37,6 +39,10 @@ from utils import (  # pylint: disable=wrong-import-position
 )
 from utils.oci_model import (  # pylint: disable=wrong-import-position
     create_chat_oci_genai,
+)
+from utils.report_output_utils import (  # pylint: disable=wrong-import-position
+    add_report_output_arguments,
+    save_report_from_args,
 )
 from common.month_utils import (  # pylint: disable=wrong-import-position
     format_month as _format_month,
@@ -247,6 +253,11 @@ def _render_trend_section(
             )
     lines.append("")
     return lines
+
+
+def _default_trend_filename(reference_month: str) -> str:
+    """Build canonical default filename for trend reports."""
+    return f"trend-report-last6-until-{reference_month}.md"
 
 
 class BatchTrendReportAgent:  # pylint: disable=too-few-public-methods,too-many-arguments
@@ -508,6 +519,7 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Auth strategy: AUTO, API_KEY, RESOURCE_PRINCIPAL.",
     )
+    add_report_output_arguments(parser)
     return parser.parse_args()
 
 
@@ -530,7 +542,19 @@ def main() -> int:
         print(f"ERROR: {exc}")
         return 1
 
-    print(report)
+    if args.reference_month:
+        reference = _format_month(*_parse_month_year(args.reference_month))
+    else:
+        today = date.today()
+        reference = _format_month(today.year, today.month)
+    default_filename = _default_trend_filename(reference)
+
+    saved = save_report_from_args(report, args, default_filename=default_filename)
+    if saved is None:
+        print(report, end="")
+        return 0
+
+    print(f"Report saved to {saved.location}")
     return 0
 
 

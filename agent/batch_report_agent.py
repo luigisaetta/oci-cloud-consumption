@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-23
+Date last modified: 2026-04-25
 License: MIT
 Description: Batch agent generating monthly OCI consumption top-10 reports
 by compartment and service.
@@ -22,11 +22,15 @@ if str(PROJECT_ROOT) not in sys.path:
 # Load project .env so OCI_REGION / auth settings are honored in CLI mode.
 load_dotenv(PROJECT_ROOT / ".env")
 
-from utils.consumption_utils import (
+from common.month_utils import month_window  # pylint: disable=wrong-import-position
+from utils.consumption_utils import (  # pylint: disable=wrong-import-position
     get_usage_summary_by_compartment,
     get_usage_summary_by_service,
 )
-from common.month_utils import month_window, parse_month_year
+from utils.report_output_utils import (  # pylint: disable=wrong-import-position
+    add_report_output_arguments,
+    save_report_from_args,
+)
 
 
 @dataclass
@@ -121,6 +125,11 @@ def _render_section(
             )
     lines.append("")
     return lines
+
+
+def _default_monthly_filename(month: str) -> str:
+    """Build canonical default filename for monthly reports."""
+    return f"monthly-report-{month}.md"
 
 
 class BatchConsumptionReportAgent:  # pylint: disable=too-few-public-methods,too-many-arguments
@@ -227,6 +236,7 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Auth strategy: AUTO, API_KEY, RESOURCE_PRINCIPAL.",
     )
+    add_report_output_arguments(parser)
     return parser.parse_args()
 
 
@@ -250,7 +260,16 @@ def main() -> int:
         print(f"ERROR: {exc}")
         return 1
 
-    print(report, end="")
+    year, month = _parse_month_year(args.month_year)
+    normalized_month = f"{year:04d}-{month:02d}"
+    default_filename = _default_monthly_filename(normalized_month)
+
+    saved = save_report_from_args(report, args, default_filename=default_filename)
+    if saved is None:
+        print(report, end="")
+        return 0
+
+    print(f"Report saved to {saved.location}")
     return 0
 
 

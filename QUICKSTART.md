@@ -82,6 +82,19 @@ Generate monthly top-10 report by compartment and service:
 python agent/batch_report_agent.py 2026-04
 ```
 
+Save the report to a local file:
+
+```bash
+python agent/batch_report_agent.py 2026-04 --output-target local
+```
+
+Save the report to OCI Object Storage:
+
+```bash
+OCI_OBJECT_STORAGE_BUCKET_NAME=my-report-bucket \
+python agent/batch_report_agent.py 2026-04 --output-target object_storage
+```
+
 Accepted month formats:
 - `YYYY-MM` (for example `2026-04`)
 - `MM-YYYY` (for example `04-2026`)
@@ -90,5 +103,7 @@ Accepted month formats:
 
 - OCI authentication follows the backend logic in `utils/oci_utils.py`:
   config profile first, then resource-principal fallback.
+- Batch Object Storage output uses `OCI_OBJECT_STORAGE_BUCKET_NAME` unless
+  `--bucket-name` is passed, and can use `OCI_OBJECT_STORAGE_REPORT_PREFIX`.
 - Date parameters are expected in ISO format (`YYYY-MM-DD`).
 - MCP server list consumed by the agent is defined in `config/mcp_servers.json`.

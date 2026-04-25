@@ -51,12 +51,27 @@ Optional arguments:
 - `--top-n <int>`
 - `--profile <OCI_PROFILE>`
 - `--auth-type AUTO|API_KEY|RESOURCE_PRINCIPAL`
+- `--output-target stdout|local|object_storage` (default: `stdout`)
+- `--output-file <path>` for local output
+- `--bucket-name <bucket>` for Object Storage output
+- `--object-name <name>` for Object Storage output
+- `--object-prefix <prefix>` for default Object Storage object names
 
 ### What it produces
 - Markdown report printed to stdout.
 - Can be redirected to a file:
 ```bash
 python agent/batch_report_agent.py 2026-03 > report_2026-03.md
+```
+- Can save directly to a local file:
+```bash
+python agent/batch_report_agent.py 2026-03 --output-target local
+```
+- Can save directly to OCI Object Storage:
+```bash
+python agent/batch_report_agent.py 2026-03 \
+  --output-target object_storage \
+  --bucket-name my-report-bucket
 ```
 
 ---
@@ -81,6 +96,11 @@ Optional arguments:
 - `--top-n <int>`
 - `--profile <OCI_PROFILE>`
 - `--auth-type AUTO|API_KEY|RESOURCE_PRINCIPAL`
+- `--output-target stdout|local|object_storage` (default: `stdout`)
+- `--output-file <path>` for local output
+- `--bucket-name <bucket>` for Object Storage output
+- `--object-name <name>` for Object Storage output
+- `--object-prefix <prefix>` for default Object Storage object names
 
 ### What it produces
 - Markdown trend report printed to stdout.
@@ -88,6 +108,11 @@ Optional arguments:
 ```bash
 python agent/batch_trend_report_agent.py --reference-month 2026-04 > trend_2026-04.md
 ```
+- Can save directly to a local file or OCI Object Storage using `--output-target`.
+
+Object Storage defaults:
+- bucket: `OCI_OBJECT_STORAGE_BUCKET_NAME`
+- object prefix: `OCI_OBJECT_STORAGE_REPORT_PREFIX`
 
 ## Where to document agents?
 

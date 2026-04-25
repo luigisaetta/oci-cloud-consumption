@@ -1,6 +1,6 @@
 """
 Author: L. Saetta
-Date last modified: 2026-04-23
+Date last modified: 2026-04-25
 License: MIT
 Description: Interactive rich CLI menu to run batch agents and save markdown reports.
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import os
 from pathlib import Path
 import sys
 from typing import List, Optional, Tuple
@@ -34,6 +35,14 @@ from common.month_utils import (  # pylint: disable=wrong-import-position
     months_between as _months_between,
     normalize_month as _normalize_month,
 )
+from utils.report_output_utils import (  # pylint: disable=wrong-import-position
+    OBJECT_STORAGE_BUCKET_ENV,
+    OBJECT_STORAGE_PREFIX_ENV,
+    SavedReport,
+    build_object_name,
+    save_report_to_local,
+    save_report_to_object_storage,
+)
 
 OUTPUT_DIR = Path("reports")
 console = Console()
@@ -49,6 +58,16 @@ class RunOptions:
     auth_type: Optional[str] = None
 
 
+@dataclass
+class OutputOptions:
+    """Report persistence options collected by the menu."""
+
+    destination: str
+    local_path: Optional[Path] = None
+    bucket_name: Optional[str] = None
+    object_name: Optional[str] = None
+
+
 def _normalize_auth_type_choice(auth_type_choice: str) -> Optional[str]:
     """Normalize and validate auth type selection from CLI input."""
     normalized = (auth_type_choice or "").strip().upper()
@@ -61,10 +80,36 @@ def _normalize_auth_type_choice(auth_type_choice: str) -> Optional[str]:
     return normalized
 
 
-def _save_report(markdown: str, output_path: Path) -> None:
-    """Persist markdown output to file."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(markdown, encoding="utf-8")
+def _normalize_output_destination(destination: str) -> str:
+    """Normalize and validate output destination selection."""
+    normalized = (destination or "").strip().lower()
+    if normalized not in {"local", "object_storage"}:
+        raise ValueError("Invalid output destination. Use local or object_storage.")
+    return normalized
+
+
+def _save_report(
+    markdown: str,
+    output_options: OutputOptions,
+    *,
+    config_profile: str,
+    auth_type: Optional[str],
+) -> SavedReport:
+    """Persist markdown output to the selected destination."""
+    if output_options.destination == "local":
+        if output_options.local_path is None:
+            raise ValueError("Local output path is required.")
+        return save_report_to_local(markdown, output_options.local_path)
+
+    if not output_options.object_name:
+        raise ValueError("Object Storage object name is required.")
+    return save_report_to_object_storage(
+        markdown,
+        bucket_name=output_options.bucket_name,
+        object_name=output_options.object_name,
+        config_profile=config_profile,
+        auth_type=auth_type,
+    )
 
 
 def _default_monthly_filename(month: str) -> str:
@@ -139,6 +184,43 @@ def _collect_common_options() -> RunOptions:
     )
 
 
+def _collect_output_options(default_filename: str) -> OutputOptions:
+    """Collect destination-specific report output options."""
+    destination = _normalize_output_destination(
+        Prompt.ask(
+            "Output destination",
+            choices=["local", "object_storage"],
+            default="local",
+            show_choices=True,
+        )
+    )
+    if destination == "local":
+        output_path = Path(
+            Prompt.ask("Output file", default=str(OUTPUT_DIR / default_filename))
+        )
+        return OutputOptions(destination=destination, local_path=output_path)
+
+    env_bucket = os.getenv(OBJECT_STORAGE_BUCKET_ENV, "").strip()
+    if env_bucket:
+        bucket_name = Prompt.ask("Object Storage bucket", default=env_bucket)
+    else:
+        bucket_name = Prompt.ask("Object Storage bucket")
+
+    object_prefix = Prompt.ask(
+        "Object prefix",
+        default=os.getenv(OBJECT_STORAGE_PREFIX_ENV, "").strip(),
+    )
+    object_name = Prompt.ask(
+        "Object name",
+        default=build_object_name(default_filename, prefix=object_prefix),
+    )
+    return OutputOptions(
+        destination=destination,
+        bucket_name=bucket_name,
+        object_name=object_name,
+    )
+
+
 def _preview_plan(rows: List[Tuple[str, str]]) -> None:
     """Show execution plan as a compact table."""
     table = Table(title="Run Preview")
@@ -149,18 +231,21 @@ def _preview_plan(rows: List[Tuple[str, str]]) -> None:
     console.print(table)
 
 
-def _show_saved_file_preview(output_path: Path, max_lines: int = 14) -> None:
-    """Show first lines of saved markdown file."""
-    try:
-        lines = output_path.read_text(encoding="utf-8").splitlines()
-    except Exception:  # pylint: disable=broad-exception-caught
-        return
+def _format_output_location(output_options: OutputOptions) -> str:
+    """Format output options for the preview table."""
+    if output_options.destination == "local":
+        return str(output_options.local_path)
+    return f"oci://{output_options.bucket_name}/{output_options.object_name}"
 
+
+def _show_markdown_preview(markdown: str, max_lines: int = 14) -> None:
+    """Show first lines of generated markdown."""
+    lines = markdown.splitlines()
     preview = "\n".join(lines[:max_lines]).strip() or "<empty file>"
     console.print(
         Panel(
             preview,
-            title=f"Saved Report Preview ({min(len(lines), max_lines)} lines)",
+            title=f"Report Preview ({min(len(lines), max_lines)} lines)",
             border_style="green",
         )
     )
@@ -172,9 +257,7 @@ def _run_monthly(agent: BatchConsumptionReportAgent) -> None:
     month = _normalize_month(Prompt.ask("Target month (YYYY-MM or MM-YYYY)"))
     options = _collect_common_options()
     default_name = _default_monthly_filename(month)
-    output_path = Path(
-        Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
-    )
+    output_options = _collect_output_options(default_name)
 
     _preview_plan(
         [
@@ -184,7 +267,7 @@ def _run_monthly(agent: BatchConsumptionReportAgent) -> None:
             ("Top N", str(options.top_n)),
             ("Profile", options.profile),
             ("Auth type", options.auth_type or "<auto>"),
-            ("Output", str(output_path)),
+            ("Output", _format_output_location(output_options)),
         ]
     )
     if not Confirm.ask("Run this job now?", default=True):
@@ -199,10 +282,15 @@ def _run_monthly(agent: BatchConsumptionReportAgent) -> None:
             config_profile=options.profile,
             auth_type=options.auth_type,
         )
-        _save_report(markdown, output_path)
+        saved = _save_report(
+            markdown,
+            output_options,
+            config_profile=options.profile,
+            auth_type=options.auth_type,
+        )
 
-    console.print(f"\n[bold green]Report generated:[/bold green] {output_path}\n")
-    _show_saved_file_preview(output_path)
+    console.print(f"\n[bold green]Report generated:[/bold green] {saved.location}\n")
+    _show_markdown_preview(markdown)
     console.print("")
 
 
@@ -217,9 +305,7 @@ def _run_range(agent: BatchConsumptionReportAgent) -> None:
     normalized_start = month_list[0]
     normalized_end = month_list[-1]
     default_name = _default_range_filename(normalized_start, normalized_end)
-    output_path = Path(
-        Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
-    )
+    output_options = _collect_output_options(default_name)
 
     _preview_plan(
         [
@@ -231,7 +317,7 @@ def _run_range(agent: BatchConsumptionReportAgent) -> None:
             ("Top N", str(options.top_n)),
             ("Profile", options.profile),
             ("Auth type", options.auth_type or "<auto>"),
-            ("Output", str(output_path)),
+            ("Output", _format_output_location(output_options)),
         ]
     )
     if not Confirm.ask("Run this job now?", default=True):
@@ -262,10 +348,18 @@ def _run_range(agent: BatchConsumptionReportAgent) -> None:
                 ).strip()
             )
             report_lines.append("")
-        _save_report("\n".join(report_lines).strip() + "\n", output_path)
+        markdown = "\n".join(report_lines).strip() + "\n"
+        saved = _save_report(
+            markdown,
+            output_options,
+            config_profile=options.profile,
+            auth_type=options.auth_type,
+        )
 
-    console.print(f"\n[bold green]Range report generated:[/bold green] {output_path}\n")
-    _show_saved_file_preview(output_path)
+    console.print(
+        f"\n[bold green]Range report generated:[/bold green] {saved.location}\n"
+    )
+    _show_markdown_preview(markdown)
     console.print("")
 
 
@@ -281,9 +375,7 @@ def _run_trend(agent: BatchTrendReportAgent) -> None:
     )
     options = _collect_common_options()
     default_name = _default_trend_filename(reference_month)
-    output_path = Path(
-        Prompt.ask("Output file", default=str(OUTPUT_DIR / default_name))
-    )
+    output_options = _collect_output_options(default_name)
 
     _preview_plan(
         [
@@ -294,7 +386,7 @@ def _run_trend(agent: BatchTrendReportAgent) -> None:
             ("Top N", str(options.top_n)),
             ("Profile", options.profile),
             ("Auth type", options.auth_type or "<auto>"),
-            ("Output", str(output_path)),
+            ("Output", _format_output_location(output_options)),
         ]
     )
     if not Confirm.ask("Run this job now?", default=True):
@@ -309,10 +401,17 @@ def _run_trend(agent: BatchTrendReportAgent) -> None:
             config_profile=options.profile,
             auth_type=options.auth_type,
         )
-        _save_report(markdown, output_path)
+        saved = _save_report(
+            markdown,
+            output_options,
+            config_profile=options.profile,
+            auth_type=options.auth_type,
+        )
 
-    console.print(f"\n[bold green]Trend report generated:[/bold green] {output_path}\n")
-    _show_saved_file_preview(output_path)
+    console.print(
+        f"\n[bold green]Trend report generated:[/bold green] {saved.location}\n"
+    )
+    _show_markdown_preview(markdown)
     console.print("")
 
 
