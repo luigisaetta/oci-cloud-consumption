@@ -107,6 +107,18 @@ Verify that the container is running and the TCP health check is healthy:
 docker compose ps
 ```
 
+List the tools exposed by the MCP server:
+
+```bash
+python list_tools.py http://127.0.0.1:8000/mcp
+```
+
+From another machine, replace the host with the Linux server address:
+
+```bash
+python deployment/mcp/list_tools.py http://PROXIMA_IP:8000/mcp
+```
+
 For a client running on the same Linux host, use this MCP connection:
 
 ```json
