@@ -1,0 +1,21 @@
+services:
+  mcp-consumption:
+    build:
+      context: ../..
+      dockerfile: deployment/mcp/Dockerfile
+    image: oci-cloud-consumption-mcp:${MCP_IMAGE_TAG:-latest}
+    container_name: ${MCP_CONTAINER_NAME:-oci-cloud-consumption-mcp}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOME: /home/app
+      MCP_HOST: ${MCP_HOST:-0.0.0.0}
+      MCP_PORT: ${MCP_PORT:-8000}
+      MCP_PATH: ${MCP_PATH:-/mcp}
+      OCI_REGION: ${OCI_REGION:?OCI_REGION must be set}
+      OCI_AUTH_TYPE: ${OCI_AUTH_TYPE:-API_KEY}
+      OCI_CONFIG_PROFILE: ${OCI_CONFIG_PROFILE:-DEFAULT}
+    ports:
+      - "${MCP_PUBLISHED_PORT:-8000}:${MCP_PORT:-8000}"
+    restart: unless-stopped
